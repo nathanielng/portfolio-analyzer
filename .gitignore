@@ -1,0 +1,28 @@
+# .gitignore
+# Environment
+.env
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Output files
+output/*.csv
+output/*.png
+!output/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Data (except examples)
+data/*.csv
+!data/.gitkeep
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
