@@ -3,7 +3,11 @@
 
 import logging
 import os
+import sys
 from typing import Dict, List, Optional
+
+# Add parent directory to path so we can import from src
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dotenv import load_dotenv
 
