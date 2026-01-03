@@ -4,6 +4,7 @@
 import logging
 import os
 import sys
+from datetime import datetime
 from typing import Dict, List, Optional
 
 # Add parent directory to path so we can import from src
@@ -90,14 +91,25 @@ def get_stock_prices(
         
         price_str = f"{price:.2f}" if price else "N/A"
         price_usd_str = f"{price_usd:.2f}" if price_usd else "N/A"
-        
+
+        # Format date as yyyymmdd
+        date_str = result['date']
+        if date_str and date_str != 'N/A':
+            try:
+                # Convert from YYYY-MM-DD to yyyymmdd
+                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                date_str = date_obj.strftime('%Y%m%d')
+            except ValueError:
+                # If date is already in different format, keep as is
+                pass
+
         results.append({
             'Company': company,
             'Symbol': symbol,
             'Price': price_str,
             'Currency': currency,
             'Price_USD': price_usd_str,
-            'Date': result['date']
+            'Date': date_str
         })
     
     logger.info(f"Successfully fetched data for {len(results)} stocks")
