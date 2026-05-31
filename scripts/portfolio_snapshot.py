@@ -29,6 +29,9 @@ from dotenv import load_dotenv
 
 from src import config
 from src.fetchers import StooqFetcher, YFinanceFetcher
+from src.fetchers.history import HistoryFetcher, PRESETS, _preset_dates
+from src.fetchers.fx import FXConverter
+from src.analyzers.risk_metrics import RiskMetrics
 from scripts.daily_report import fetch_price, find_holdings_file, get_fx_rate, load_holdings
 
 load_dotenv()
@@ -237,8 +240,54 @@ def build_data(holdings: List[Dict]) -> Dict:
         'lots':        lots,
         'by_symbol':   by_symbol,
         'by_account':  by_account,
-        'by_currency': by_currency,
+        'by_currency':  by_currency,
+        'correlation':  None,  # filled in by main() after build_data()
     }
+
+
+# ---------------------------------------------------------------------------
+# Correlation matrix
+# ---------------------------------------------------------------------------
+
+def compute_correlations(
+    symbols: List[str],
+    currency_map: Dict[str, str],
+    preset: str = '1y',
+) -> Optional[Dict]:
+    """
+    Fetch historical prices, convert to SGD, return a correlation matrix dict.
+
+    Uses HistoryFetcher's cache so repeated runs are fast.
+    Returns None on failure (dashboard gracefully hides the section).
+    """
+    try:
+        start, end, interval = _preset_dates(PRESETS[preset])
+        print(f"\nFetching {preset} price history for correlation ({start} → {end})...")
+        prices = HistoryFetcher().fetch(symbols, start, end, interval=interval)
+        if prices.empty:
+            logger.warning("HistoryFetcher returned no data for correlation")
+            return None
+
+        # Convert all prices to SGD base so correlations capture FX risk
+        sub_map = {s: currency_map.get(s, 'USD') for s in prices.columns}
+        prices_sgd = FXConverter().to_base_currency(prices, sub_map)
+
+        rm = RiskMetrics()
+        returns = rm.calculate_returns(prices_sgd)
+        corr = rm.calculate_correlation_matrix(returns)
+
+        syms = list(corr.columns)
+        print(f"  Correlation matrix: {len(syms)}×{len(syms)} from {len(returns)} observations")
+        return {
+            'period':        preset,
+            'base_currency': config.BASE_CURRENCY,
+            'symbols':       syms,
+            'matrix':        [[round(v, 4) for v in row] for row in corr.values.tolist()],
+            'n_obs':         len(returns),
+        }
+    except Exception as e:
+        logger.warning(f"Correlation computation failed: {e}")
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -310,6 +359,20 @@ tbody tr:hover td{background:#fafbfc}
 .tag-cash{background:#dfe6e9;color:#2d3436}.tag-cpf{background:#dfe6fd;color:#2d3436}
 .tag-srs{background:#ffeaa7;color:#6c5ce7}.tag-taxable{background:#d5f5e3;color:#1a7c4d}
 @media(max-width:900px){.g2,.g3{grid-template-columns:1fr}.span2{grid-column:auto}}
+/* Correlation heatmap */
+.corr-scroll{overflow-x:auto;overflow-y:auto;max-height:520px}
+.corr-tbl{border-collapse:collapse;font-size:.76rem;white-space:nowrap}
+.corr-tbl thead th{position:sticky;top:0;z-index:2;background:#f8f9fa;padding:6px 8px;
+  text-align:center;font-size:.7rem;font-weight:700;color:#636e72;min-width:58px}
+.corr-tbl thead th:first-child{position:sticky;left:0;z-index:3;text-align:left}
+.corr-tbl tbody th{position:sticky;left:0;z-index:1;background:#f8f9fa;padding:6px 10px;
+  text-align:right;font-size:.7rem;font-weight:700;color:#636e72;white-space:nowrap}
+.corr-tbl td{width:58px;height:40px;text-align:center;font-size:.74rem;font-weight:500;
+  cursor:default;transition:filter .1s}
+.corr-tbl td:hover{filter:brightness(.88)}
+.corr-meta{font-size:.72rem;color:#b2bec3;margin-bottom:10px}
+.corr-flags{margin-top:14px;font-size:.78rem;color:#636e72;line-height:1.7}
+.corr-flags strong{color:#e17055}
 </style>
 </head>
 <body>
@@ -373,6 +436,17 @@ tbody tr:hover td{background:#fafbfc}
     <div class="card">
       <h3 class="alone">By Currency</h3>
       <div style="max-width:280px;margin:0 auto"><canvas id="c-ccy"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Correlation heatmap -->
+  <div class="g2" id="corr-section">
+    <div class="card span2">
+      <div class="chdr">
+        <h3 class="alone" style="margin-bottom:0">Correlation Matrix</h3>
+        <div id="corr-preset-label" style="font-size:.72rem;color:#b2bec3;padding-top:4px"></div>
+      </div>
+      <div id="corr-inner"><span class="na">Computing…</span></div>
     </div>
   </div>
 
@@ -660,6 +734,66 @@ function renderTable(lots){
     </tr>`).join('');
 }
 renderTable(D.lots);
+// ── Correlation heatmap ───────────────────────────────────────────────────
+function corrColor(v){
+  // +1 → blue (#2980b9), 0 → white, -1 → red (#e74c3c)
+  if(isNaN(v)) return '#f0f2f5';
+  const t = Math.abs(v);
+  if(v > 0){
+    return `rgb(${Math.round(255-t*203)},${Math.round(255-t*103)},${Math.round(255-t*36)})`;
+  } else {
+    return `rgb(${Math.round(255-t*24)},${Math.round(255-t*179)},${Math.round(255-t*195)})`;
+  }
+}
+function corrText(v){ return Math.abs(v)>0.55 ? '#fff' : '#2d3436'; }
+
+function renderCorr(){
+  const C = D.correlation;
+  if(!C || !C.symbols || !C.symbols.length){
+    document.getElementById('corr-section').style.display='none';
+    return;
+  }
+  const syms=C.symbols, mat=C.matrix;
+  document.getElementById('corr-preset-label').textContent =
+    `${C.period} daily returns · ${C.n_obs} observations · base: ${C.base_currency}`;
+
+  // Build table
+  let html='<div class="corr-scroll"><table class="corr-tbl"><thead><tr><th></th>';
+  html += syms.map(s=>`<th title="${s}">${s}</th>`).join('');
+  html += '</tr></thead><tbody>';
+  for(let i=0;i<syms.length;i++){
+    html += `<tr><th>${syms[i]}</th>`;
+    for(let j=0;j<syms.length;j++){
+      const v=mat[i][j];
+      const bg=corrColor(v), fg=corrText(v);
+      const bld=(i!==j&&Math.abs(v)>0.7)?'font-weight:700;':'';
+      const tip=`${syms[i]} ↔ ${syms[j]}: ${v>=0?'+':''}${v.toFixed(2)}`;
+      html+=`<td style="background:${bg};color:${fg};${bld}" title="${tip}">${v.toFixed(2)}</td>`;
+    }
+    html+='</tr>';
+  }
+  html+='</tbody></table></div>';
+
+  // Flag high pairs
+  const high=[];
+  for(let i=0;i<syms.length;i++)
+    for(let j=i+1;j<syms.length;j++)
+      if(Math.abs(mat[i][j])>0.7) high.push([syms[i],syms[j],mat[i][j]]);
+  high.sort((a,b)=>Math.abs(b[2])-Math.abs(a[2]));
+
+  if(high.length){
+    html+=`<div class="corr-flags"><strong>⚠ High correlations (|r| &gt; 0.70):</strong><br>`;
+    html+=high.map(([a,b,v])=>`${a} ↔ ${b}: ${v>=0?'+':''}${v.toFixed(2)}`).join(' &nbsp;·&nbsp; ');
+    html+='</div>';
+  } else {
+    html+='<div class="corr-flags" style="color:#27ae60">✓ No pairs exceed |r| = 0.70</div>';
+  }
+
+  document.getElementById('corr-inner').innerHTML=html;
+}
+renderCorr();
+
+// ── Sortable table ─────────────────────────────────────────────────────────
 let sortCol=null,sortAsc=true;
 document.querySelectorAll('#tbl thead th').forEach(th=>{
   th.addEventListener('click',()=>{
@@ -713,6 +847,10 @@ def main() -> None:
     import argparse
     parser = argparse.ArgumentParser(description='Portfolio snapshot + dashboard')
     parser.add_argument('--holdings', help='Path to holdings CSV')
+    parser.add_argument('--no-corr', action='store_true',
+                        help='Skip correlation matrix (faster, no historical fetch)')
+    parser.add_argument('--corr-preset', choices=list(PRESETS), default='1y',
+                        help='History period for correlation (default: 1y)')
     args = parser.parse_args()
 
     holdings_path = args.holdings or find_holdings_file()
@@ -721,11 +859,13 @@ def main() -> None:
 
     data = build_data(holdings)
     s = data['summary']
-    total = s['total_value']
-    gain = s['total_gain']
-    gain_pct = s['total_gain_pct']
-    print(f"\nTotal value: S${total:,.2f}")
-    print(f"Total gain:  S${gain:+,.2f} ({gain_pct:+.2f}%)")
+    print(f"\nTotal value: S${s['total_value']:,.2f}")
+    print(f"Total gain:  S${s['total_gain']:+,.2f} ({s['total_gain_pct']:+.2f}%)")
+
+    if not args.no_corr:
+        symbols = list(dict.fromkeys(h['symbol'] for h in holdings))
+        currency_map = {h['symbol']: h['currency'] for h in holdings}
+        data['correlation'] = compute_correlations(symbols, currency_map, preset=args.corr_preset)
 
     save_outputs(data)
 

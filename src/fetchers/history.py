@@ -166,18 +166,27 @@ class HistoryFetcher:
         existing = self._read_cache(symbol, interval)
         cached_rows = len(existing)
 
-        # Determine what to fetch: start from day before last cached date
-        # (re-fetch the last bar in case it was an incomplete intraday close)
+        # Determine what to fetch
         if existing.empty:
             fetch_from = start_date
         else:
-            last_cached = existing.index.max()
-            fetch_from = (last_cached - timedelta(days=1)).strftime('%Y-%m-%d')
-            # If cache already covers the full requested range, skip fetching
-            if last_cached.date() >= date.today() - timedelta(days=1):
+            first_cached = existing.index.min()
+            last_cached  = existing.index.max()
+
+            # Back-fill: cache doesn't reach back far enough for the requested range
+            needs_backfill = first_cached.date() > pd.Timestamp(start_date).date()
+
+            if needs_backfill:
+                # Fetch from requested start to end, merge with existing
+                fetch_from = start_date
+                logger.info(f"{symbol} {interval}: back-filling {start_date} → {first_cached.date()}")
+            elif last_cached.date() >= date.today() - timedelta(days=1):
+                # Cache is fully up to date — nothing to fetch
                 logger.info(f"{symbol} {interval}: cache up to date ({last_cached.date()})")
-                sliced = _slice(existing, start_date, end_date)
-                return sliced, cached_rows, 0
+                return _slice(existing, start_date, end_date), cached_rows, 0
+            else:
+                # Normal forward append: re-fetch last bar in case it was intraday
+                fetch_from = (last_cached - timedelta(days=1)).strftime('%Y-%m-%d')
 
         logger.info(f"{symbol} {interval}: fetching {fetch_from} → {end_date}")
         new_df = self._fetch_yfinance(symbol, fetch_from, end_date, interval)
