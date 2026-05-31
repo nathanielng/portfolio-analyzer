@@ -5,15 +5,24 @@ A Python-based portfolio analysis tool for tracking stock prices, calculating ri
 
 ## Features
 
-- 📈 **Multi-Source Data Fetching**: Yahoo Finance and Polygon.io support with automatic fallback
-- 💱 **Currency Conversion**: Automatic USD conversion for international stocks
+- 📈 **Multi-Source Data Fetching**: Yahoo Finance, Polygon.io, and Stooq with automatic fallback
+- 💱 **SGD-Base Currency**: All portfolio values computed in SGD (or configurable base currency)
+- 📊 **Daily Report**: P&L, YTD, drawdown, macro dashboard, per-ticker news → Markdown + Telegram
 - 🔄 **Smart Rate Limiting**: Exponential backoff and intelligent request pacing
-- 📊 **Portfolio Analysis**: Correlation matrices, risk metrics, and comprehensive risk reports
-- 📉 **Risk Metrics**: Volatility, variance, maximum drawdown, VaR, and CVaR
-- 📈 **Risk-Return Metrics**: Sharpe ratio, Sortino ratio, Beta, Alpha, and Information ratio
-- ⚖️ **Rebalancing Tools**: (Coming soon) Target allocation and risk parity strategies
-- 🪵 **Comprehensive Logging**: Detailed logging for debugging and monitoring
-- 📝 **CSV-Based Configuration**: Simple CSV files for portfolio management
+- 📉 **Risk Metrics**: Volatility, max drawdown, VaR, CVaR, Sharpe, Sortino, Beta, Alpha
+- ⚖️ **Rebalancing**: Band-based rebalancing suggestions (contributions-first)
+- 📝 **CSV-Based Configuration**: `universe.csv` (candidates), `holdings.csv` (positions), `targets.csv` (weights)
+
+## Scope
+
+This repo is a **portfolio analysis and daily monitoring** tool. It is intentionally scoped to:
+- Portfolio valuation, risk metrics, and allocation math
+- Daily report generation and Telegram delivery
+- Rebalancing suggestions
+
+**Out of scope (kept separate):** AI/tech research aggregation (Hacker News, arXiv, GitHub Trending
+summarization via LLM). That belongs in a dedicated `research_scan.py` script — the concerns are
+entirely different and mixing them would bloat this tool's dependency surface.
 
 ## Installation
 ```bash
@@ -172,10 +181,45 @@ Running `analyze_portfolio.py` generates the following CSV files in the `output/
 
 ## Environment Variables
 
-- `POLYGON_API_KEY`: Your Polygon.io API key (optional, enables Polygon backend)
-- `STOCKS_CSV`: Path to stocks CSV file (default: `data/stocks.csv`)
-- `OUTPUT_FILE`: Output CSV file path (default: `output/stock_prices.csv`)
-- `LOG_LEVEL`: Logging level (default: `INFO`)
+| Variable | Default | Description |
+|---|---|---|
+| `BASE_CURRENCY` | `SGD` | Base currency for all portfolio values |
+| `TELEGRAM_BOT_TOKEN` | — | Telegram bot token (enables push notifications) |
+| `TELEGRAM_CHAT_ID` | — | Telegram chat/channel ID |
+| `POLYGON_API_KEY` | — | Polygon.io key (optional, enables Polygon backend) |
+| `FRED_API_KEY` | — | FRED key (optional, higher rate limits for macro data) |
+| `OUTPUT_DIR` | `output` | Directory for generated reports |
+| `LOG_LEVEL` | `INFO` | Logging level |
+
+See `.env.example` for setup instructions including how to find your Telegram chat ID.
+
+## Daily Report & Cron Setup
+
+Run once manually to verify:
+```bash
+python scripts/daily_report.py
+```
+
+To run automatically every day at 8:00 AM:
+```bash
+crontab -e
+```
+Add these lines (adjust path to match where you cloned the repo):
+```
+# Portfolio daily report — 8:00 AM
+0 8 * * * cd /path/to/portfolio-analyzer && ~/.venv/bin/python scripts/daily_report.py >> ~/portfolio-reports/daily.log 2>&1
+```
+
+Create the log directory first:
+```bash
+mkdir -p ~/portfolio-reports
+```
+
+**Telegram setup** (to get push notifications):
+1. Message `@BotFather` on Telegram → `/newbot` → copy the token
+2. Start a chat with your new bot
+3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the `chat.id` value
+4. Add both to your `.env` file
 
 ## License
 

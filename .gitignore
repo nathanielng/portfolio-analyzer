@@ -6,9 +6,10 @@ env/
 *.pyc
 __pycache__/
 
-# Output files
+# Output files (reports are local — regenerated on each run)
 output/*.csv
 output/*.png
+output/*.md
 !output/.gitkeep
 
 # IDE
@@ -16,8 +17,9 @@ output/*.png
 .idea/
 *.swp
 
-# Data (except examples)
+# Data (working files — local only)
 data/*.csv
+data/*.json
 !data/.gitkeep
 
 # OS
