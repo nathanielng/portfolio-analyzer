@@ -27,6 +27,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dotenv import load_dotenv
 
+import csv as _csv
+
 from src import config
 from src.fetchers import StooqFetcher, YFinanceFetcher
 from src.fetchers.history import HistoryFetcher, PRESETS, _preset_dates
@@ -246,6 +248,36 @@ def build_data(holdings: List[Dict]) -> Dict:
 
 
 # ---------------------------------------------------------------------------
+# Watchlist loading
+# ---------------------------------------------------------------------------
+
+def load_watchlist(path: Optional[str] = None) -> List[Dict]:
+    """Load watchlist CSV (Symbol, Currency columns required). Returns [] if absent."""
+    candidates = [
+        path,
+        str(PROJECT_ROOT / 'data' / 'watchlist.csv'),
+        str(PROJECT_ROOT / 'examples' / 'watchlist.csv'),
+    ]
+    for p in candidates:
+        if not p or not Path(p).exists():
+            continue
+        rows = []
+        with open(p, newline='') as f:
+            reader = _csv.DictReader(
+                filter(lambda line: not line.startswith('#'), f)
+            )
+            for row in reader:
+                sym = row.get('Symbol', '').strip()
+                ccy = row.get('Currency', 'USD').strip().upper()
+                if sym:
+                    rows.append({'symbol': sym, 'currency': ccy})
+        if rows:
+            print(f"Loaded {len(rows)} watchlist symbols from {p}")
+            return rows
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Correlation matrix
 # ---------------------------------------------------------------------------
 
@@ -253,6 +285,7 @@ def compute_correlations(
     symbols: List[str],
     currency_map: Dict[str, str],
     preset: str = '1y',
+    watchlist: Optional[List[Dict]] = None,
 ) -> Optional[Dict]:
     """
     Fetch historical prices, convert to SGD, return a correlation matrix dict.
@@ -261,15 +294,25 @@ def compute_correlations(
     Returns None on failure (dashboard gracefully hides the section).
     """
     try:
+        # Merge holdings symbols with watchlist-only symbols
+        watch_syms: List[str] = []
+        all_symbols = list(symbols)
+        all_currency_map = dict(currency_map)
+        for w in (watchlist or []):
+            if w['symbol'] not in all_symbols:
+                all_symbols.append(w['symbol'])
+                all_currency_map[w['symbol']] = w['currency']
+                watch_syms.append(w['symbol'])
+
         start, end, interval = _preset_dates(PRESETS[preset])
         print(f"\nFetching {preset} price history for correlation ({start} → {end})...")
-        prices = HistoryFetcher().fetch(symbols, start, end, interval=interval)
+        prices = HistoryFetcher().fetch(all_symbols, start, end, interval=interval)
         if prices.empty:
             logger.warning("HistoryFetcher returned no data for correlation")
             return None
 
         # Convert all prices to SGD base so correlations capture FX risk
-        sub_map = {s: currency_map.get(s, 'USD') for s in prices.columns}
+        sub_map = {s: all_currency_map.get(s, 'USD') for s in prices.columns}
         prices_sgd = FXConverter().to_base_currency(prices, sub_map)
 
         rm = RiskMetrics()
@@ -277,13 +320,17 @@ def compute_correlations(
         corr = rm.calculate_correlation_matrix(returns)
 
         syms = list(corr.columns)
-        print(f"  Correlation matrix: {len(syms)}×{len(syms)} from {len(returns)} observations")
+        # only include watchlist symbols that actually made it into the matrix
+        watch_in_matrix = [s for s in watch_syms if s in syms]
+        print(f"  Correlation matrix: {len(syms)}×{len(syms)} from {len(returns)} observations"
+              + (f"  (watchlist: {watch_in_matrix})" if watch_in_matrix else ""))
         return {
             'period':        preset,
             'base_currency': config.BASE_CURRENCY,
             'symbols':       syms,
             'matrix':        [[round(v, 4) for v in row] for row in corr.values.tolist()],
             'n_obs':         len(returns),
+            'watchlist':     watch_in_matrix,
         }
     except Exception as e:
         logger.warning(f"Correlation computation failed: {e}")
@@ -373,6 +420,11 @@ tbody tr:hover td{background:#fafbfc}
 .corr-meta{font-size:.72rem;color:#b2bec3;margin-bottom:10px}
 .corr-flags{margin-top:14px;font-size:.78rem;color:#636e72;line-height:1.7}
 .corr-flags strong{color:#e17055}
+.corr-watch{background:#ffeaa7 !important;font-style:italic;color:#6c5ce7 !important}
+.corr-legend{font-size:.72rem;color:#636e72;margin-top:10px}
+.corr-legend span{display:inline-block;margin-right:16px}
+.leg-hold{background:#f8f9fa;padding:2px 7px;border-radius:4px;font-weight:600}
+.leg-watch{background:#ffeaa7;padding:2px 7px;border-radius:4px;font-style:italic;color:#6c5ce7;font-weight:600}
 </style>
 </head>
 <body>
@@ -754,15 +806,18 @@ function renderCorr(){
     return;
   }
   const syms=C.symbols, mat=C.matrix;
+  const watchSet = new Set(C.watchlist||[]);
+  const wCls = s => watchSet.has(s) ? 'corr-watch' : '';
+
   document.getElementById('corr-preset-label').textContent =
     `${C.period} daily returns · ${C.n_obs} observations · base: ${C.base_currency}`;
 
   // Build table
   let html='<div class="corr-scroll"><table class="corr-tbl"><thead><tr><th></th>';
-  html += syms.map(s=>`<th title="${s}">${s}</th>`).join('');
+  html += syms.map(s=>`<th class="${wCls(s)}" title="${s}${watchSet.has(s)?' (watchlist)':''}">${s}</th>`).join('');
   html += '</tr></thead><tbody>';
   for(let i=0;i<syms.length;i++){
-    html += `<tr><th>${syms[i]}</th>`;
+    html += `<tr><th class="${wCls(syms[i])}">${syms[i]}</th>`;
     for(let j=0;j<syms.length;j++){
       const v=mat[i][j];
       const bg=corrColor(v), fg=corrText(v);
@@ -773,6 +828,12 @@ function renderCorr(){
     html+='</tr>';
   }
   html+='</tbody></table></div>';
+
+  // Legend (only if there are watchlist symbols)
+  if(watchSet.size>0){
+    html+=`<div class="corr-legend"><span class="leg-hold">Normal header</span> = holdings &nbsp;
+           <span class="leg-watch">Italic / yellow</span> = watchlist (no position)</div>`;
+  }
 
   // Flag high pairs
   const high=[];
@@ -865,7 +926,10 @@ def main() -> None:
     if not args.no_corr:
         symbols = list(dict.fromkeys(h['symbol'] for h in holdings))
         currency_map = {h['symbol']: h['currency'] for h in holdings}
-        data['correlation'] = compute_correlations(symbols, currency_map, preset=args.corr_preset)
+        watchlist = load_watchlist()
+        data['correlation'] = compute_correlations(
+            symbols, currency_map, preset=args.corr_preset, watchlist=watchlist
+        )
 
     save_outputs(data)
 
