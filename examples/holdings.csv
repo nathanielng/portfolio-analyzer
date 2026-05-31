@@ -1,0 +1,6 @@
+Symbol,Quantity,AvgCost,Currency,Account,Broker
+# Your actual positions. Quantity = shares held; AvgCost = average cost per share
+# in the listing currency. Account = e.g. taxable / SRS. Example rows below:
+CSPX.L,10,500.00,USD,taxable,Broker-D
+NVDA,15,120.00,USD,taxable,Broker-C
+2330.TW,100,950.00,TWD,taxable,Broker-D

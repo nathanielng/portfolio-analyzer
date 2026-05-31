@@ -1,0 +1,10 @@
+Symbol,TargetWeight,Tier
+# Target portfolio weights (fractions, should sum to ~1.0 across what you hold).
+# Tier: core / thematic / single  (see plan 1 core-satellite architecture).
+# Example: 60% UCITS core, 20% thematic AI ETFs, 20% single names (capped per plan 1).
+CSPX.L,0.60,core
+SMH,0.10,thematic
+AIQ,0.10,thematic
+NVDA,0.08,single
+ASML,0.06,single
+2330.TW,0.06,single

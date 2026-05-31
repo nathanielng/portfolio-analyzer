@@ -1,5 +1,11 @@
-# src/analyzers/portfolio_analyzer.py
-"""Portfolio analysis and risk metrics calculation."""
+# src/analyzers/risk_metrics.py
+"""Per-asset risk and risk-return metrics.
+
+NOTE: This module computes metrics for *individual* assets (volatility, Sharpe,
+beta, correlation matrix, etc.). Weighted *portfolio-level* aggregation
+(portfolio volatility wᵀΣw, risk contribution, diversification ratio) lives in
+``portfolio.py`` (see INVESTMENT_PLAN.md §6).
+"""
 
 import logging
 from datetime import datetime, timedelta
@@ -8,18 +14,20 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-logger = logging.getLogger('portfolio_analyzer.analyzer')
+logger = logging.getLogger('portfolio_analyzer.risk_metrics')
 
 
-class PortfolioAnalyzer:
+class RiskMetrics:
     """
-    Analyze portfolio performance, risk metrics, and correlations.
+    Per-asset risk, risk-return, and correlation metrics.
 
-    This class provides comprehensive portfolio analysis including:
+    This class provides per-symbol analysis including:
     - Correlation analysis between stocks
     - Risk metrics (volatility, variance, standard deviation)
     - Risk-return metrics (Sharpe ratio, Sortino ratio, etc.)
     - Downside risk metrics (Maximum Drawdown, VaR, CVaR)
+
+    For weighted whole-portfolio metrics, use ``analyzers.portfolio.PortfolioMetrics``.
     """
 
     def __init__(self, risk_free_rate: float = 0.04):

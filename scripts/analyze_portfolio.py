@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from dotenv import load_dotenv
 
-from src.analyzers import PortfolioAnalyzer
+from src.analyzers import RiskMetrics
 from src.fetchers import PolygonFetcher, YFinanceFetcher
 from src.utils import CSVHandler, setup_logger
 
@@ -78,7 +78,7 @@ def main():
     logger.info(f"\nAnalyzing {len(symbols)} stocks: {', '.join(symbols)}")
 
     # Initialize analyzer and fetcher
-    analyzer = PortfolioAnalyzer(risk_free_rate=risk_free_rate)
+    analyzer = RiskMetrics(risk_free_rate=risk_free_rate)
     fetcher = get_fetcher()
 
     # Define analysis period (last 6 months)

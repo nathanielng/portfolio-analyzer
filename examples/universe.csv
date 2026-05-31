@@ -1,0 +1,21 @@
+Symbol,Company,AssetClass,Currency,Exchange,Region,AISemi,PreferredBroker,Notes
+CSPX.L,iShares Core S&P 500 UCITS ETF (Acc),core_etf,USD,LSE,IE,no,Broker-D,Irish-domiciled accumulating - tax-efficient core (plan 1.5)
+VUAA.L,Vanguard S&P 500 UCITS ETF (Acc),core_etf,USD,LSE,IE,no,Broker-D,Irish-domiciled accumulating alternative to CSPX
+VWRA.L,Vanguard FTSE All-World UCITS ETF (Acc),core_etf,USD,LSE,IE,no,Broker-D,Global broad core - Irish-domiciled accumulating
+NVDA,Nvidia,single_stock,USD,NASDAQ,US,yes,Broker-C/Broker-D,Core AI GPU - highest concentration risk
+MSFT,Microsoft,single_stock,USD,NASDAQ,US,partial,Broker-C/Broker-D,Hyperscaler / AI buyer
+GOOG,Alphabet Inc,single_stock,USD,NASDAQ,US,partial,Broker-C/Broker-D,Hyperscaler; designs TPUs
+GOOGL,Alphabet Inc. (Class A),single_stock,USD,NASDAQ,US,partial,Broker-C/Broker-D,Voting class of GOOG - avoid holding both
+AMZN,Amazon.com Inc,single_stock,USD,NASDAQ,US,partial,Broker-C/Broker-D,Hyperscaler (AWS)
+2330.TW,Taiwan Semiconductor Mfg,single_stock,TWD,TPE,TW,yes,Broker-D,TWD local listing; ADR TSM trades in USD
+AVGO,Broadcom Inc,single_stock,USD,NASDAQ,US,yes,Broker-C/Broker-D,AI networking / custom silicon
+VRT,Vertiv Holdings Co,single_stock,USD,NYSE,US,yes,Broker-C/Broker-D,AI data-center cooling/power infra
+ASML,ASML Holding NV,single_stock,USD,NASDAQ,US,yes,Broker-C/Broker-D,US ADR; ASML.AS is EUR Amsterdam listing
+CRM,Salesforce Inc,single_stock,USD,NYSE,US,partial,Broker-C/Broker-D,Enterprise SaaS / AI-adjacent
+ARKK,ARK Innovation ETF,thematic_etf,USD,NYSEArca,US,partial,Broker-C/Broker-D,US-domiciled - 30% div withholding for SG (plan 1.5)
+AIQ,Global X Artificial Intelligence & Technology ETF,thematic_etf,USD,NASDAQ,US,yes,Broker-C/Broker-D,US-domiciled AI thematic
+QQQM,Invesco NASDAQ 100 ETF,thematic_etf,USD,NASDAQ,US,partial,Broker-C/Broker-D,US-domiciled Nasdaq-100
+SMH,VanEck Semiconductor ETF,thematic_etf,USD,NASDAQ,US,yes,Broker-C/Broker-D,US-domiciled semis; check UCITS equivalent
+ARTY,iShares Future AI & Tech ETF,thematic_etf,USD,NASDAQ,US,yes,Broker-C/Broker-D,US-domiciled AI/tech thematic
+VGT,Vanguard Information Technology ETF,thematic_etf,USD,NYSEArca,US,partial,Broker-C/Broker-D,US-domiciled info-tech
+SOXX,iShares Semiconductor ETF,thematic_etf,USD,NASDAQ,US,yes,Broker-C/Broker-D,US-domiciled semis; check UCITS equivalent

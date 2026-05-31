@@ -1,0 +1,3 @@
+# requirements-dev.txt — development/test dependencies (BSD/MIT licensed)
+-r requirements.txt
+pytest>=7.0.0

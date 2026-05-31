@@ -42,16 +42,29 @@ python scripts/analyze_portfolio.py
 ## Project Structure
 ```
 portfolio-analyzer/
+├── INVESTMENT_PLAN.md      # Decision framework driving the roadmap
 ├── src/                    # Core library code
-│   ├── fetchers/          # Stock price fetchers
-│   ├── analyzers/         # Portfolio analysis tools
-│   ├── rebalancers/       # Rebalancing algorithms
+│   ├── config.py          # Base currency (SGD), exposure caps, rebalance bands
+│   ├── fetchers/          # Data fetchers
+│   │   ├── base / yfinance / polygon   # price quotes (implemented)
+│   │   ├── history.py     # bulk historical OHLC            [stub]
+│   │   ├── fx.py          # historical FX → SGD base (§6.5) [stub]
+│   │   └── macro.py       # FRED rates/oil/CPI + VIX (§6.5) [stub]
+│   ├── analyzers/         # Analysis
+│   │   ├── risk_metrics.py # per-asset metrics (implemented)
+│   │   ├── portfolio.py   # weighted portfolio math (§6.2)  [stub]
+│   │   └── allocation.py  # weighting engines (§6.3)        [stub]
+│   ├── rebalancers/       # Band-based rebalancing → trades (§7) [stub]
 │   └── utils/             # Shared utilities
 ├── scripts/               # Executable scripts
-├── data/                  # Input CSV files
+├── data/                  # Working CSVs: universe / holdings / targets (gitignored)
+├── examples/              # Tracked CSV templates
 ├── output/                # Generated reports
 └── tests/                 # Unit tests
 ```
+
+> **Data model:** `universe.csv` (candidate metadata: currency, exchange, asset class, broker),
+> `holdings.csv` (your positions), `targets.csv` (target weights). Templates live in `examples/`.
 
 ## Configuration
 
@@ -86,11 +99,11 @@ prices = get_stock_prices(backend='polygon')
 The portfolio analyzer provides comprehensive analysis capabilities:
 
 ```python
-from src.analyzers import PortfolioAnalyzer
+from src.analyzers import RiskMetrics  # formerly PortfolioAnalyzer (alias kept for compatibility)
 from src.fetchers import YFinanceFetcher
 
 # Initialize analyzer
-analyzer = PortfolioAnalyzer(risk_free_rate=0.04)  # 4% risk-free rate
+analyzer = RiskMetrics(risk_free_rate=0.04)  # 4% risk-free rate
 fetcher = YFinanceFetcher()
 
 # Fetch historical data
