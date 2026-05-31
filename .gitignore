@@ -20,7 +20,9 @@ output/*.md
 # Data (working files — local only)
 data/*.csv
 data/*.json
+data/*.txt
 data/cache/
+data/upside/
 !data/.gitkeep
 
 # OS

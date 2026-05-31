@@ -4,6 +4,7 @@
 import logging
 import os
 import sys
+import time
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -28,7 +29,7 @@ def determine_backend() -> str:
     Priority: Polygon (if API key exists) > YFinance (default)
     """
     polygon_key = os.getenv('POLYGON_API_KEY')
-    
+
     if polygon_key:
         logger.info("Polygon API key found - using Polygon as default backend")
         return 'polygon'
@@ -45,22 +46,22 @@ def get_stock_prices(
 ) -> List[Dict]:
     """
     Fetch stock prices for a given date (or most recent if date is None).
-    
+
     Args:
         date: Date in 'YYYY-MM-DD' format. If None, fetches most recent price.
         backend: 'yfinance' or 'polygon'. If None, auto-determined.
         convert_usd: Whether to convert prices to USD
         stocks_csv: Path to CSV file containing stock symbols and company names
-    
+
     Returns:
         List of dicts with keys: Company, Symbol, Price, Currency, Price_USD, Date
     """
     if backend is None:
         backend = determine_backend()
-    
+
     # Load stock data from CSV
     stock_data = CSVHandler.load_stocks(stocks_csv)
-    
+
     # Initialize fetcher
     if backend == 'yfinance':
         fetcher = YFinanceFetcher()
@@ -68,27 +69,29 @@ def get_stock_prices(
         fetcher = PolygonFetcher()
     else:
         raise ValueError(f"Unknown backend: {backend}")
-    
+
     # Initialize currency converter
     converter = CurrencyConverter()
-    
+
     logger.info(f"Fetching stock prices using {backend} backend for date: {date if date else 'most recent'}")
-    
+
     results = []
-    
-    for symbol, company in stock_data.items():
+
+    for i, (symbol, company) in enumerate(stock_data.items()):
         logger.info(f"Fetching data for {symbol} ({company})")
-        
+        if i > 0:
+            time.sleep(0.3)  # polite pacing — avoids yfinance rate limits on bulk runs
+
         result = fetcher.fetch_price(symbol, date)
-        
+
         price = result['price']
         currency = result['currency']
-        
+
         # Convert to USD if requested and price exists
         price_usd = None
         if convert_usd and price is not None:
             price_usd = converter.convert(price, currency, 'USD')
-        
+
         price_str = f"{price:.2f}" if price else "N/A"
         price_usd_str = f"{price_usd:.2f}" if price_usd else "N/A"
 
@@ -111,7 +114,7 @@ def get_stock_prices(
             'Price_USD': price_usd_str,
             'Date': date_str
         })
-    
+
     logger.info(f"Successfully fetched data for {len(results)} stocks")
     return results
 
@@ -121,20 +124,20 @@ def print_table(data: List[Dict]):
     if not data:
         logger.warning("No data to print")
         return
-    
+
     # Calculate column widths
     headers = ['Company', 'Symbol', 'Price', 'Currency', 'Price_USD', 'Date']
     col_widths = {h: len(h) for h in headers}
-    
+
     for row in data:
         for header in headers:
             col_widths[header] = max(col_widths[header], len(str(row.get(header, ''))))
-    
+
     # Print header
     header_row = ' | '.join(h.ljust(col_widths[h]) for h in headers)
     print('\n' + header_row)
     print('-' * len(header_row))
-    
+
     # Print rows
     for row in data:
         print(' | '.join(str(row.get(h, '')).ljust(col_widths[h]) for h in headers))
@@ -142,26 +145,24 @@ def print_table(data: List[Dict]):
 
 def main():
     """Main function to fetch and display stock prices."""
-    # Get configuration from environment
-    stocks_csv = os.getenv('STOCKS_CSV', 'data/stocks.csv')
-    output_file = os.getenv('OUTPUT_FILE', 'output/stock_prices.csv')
-    
-    # Example 1: Get most recent prices
+    import argparse
+    parser = argparse.ArgumentParser(description='Fetch current (or historical) stock prices')
+    parser.add_argument(
+        '--date', default=None,
+        help='Fetch for a specific date (YYYY-MM-DD). Default: most recent close.'
+    )
+    parser.add_argument('--stocks-csv', default=os.getenv('STOCKS_CSV', 'data/stocks.csv'))
+    parser.add_argument('--output', default=os.getenv('OUTPUT_FILE', 'output/stock_prices.csv'))
+    args = parser.parse_args()
+
+    label = f"for {args.date}" if args.date else "(most recent)"
     logger.info("=" * 60)
-    logger.info("Fetching most recent stock prices")
+    logger.info(f"Fetching stock prices {label}")
     logger.info("=" * 60)
-    data_recent = get_stock_prices(stocks_csv=stocks_csv)
-    print_table(data_recent)
-    
-    # Example 2: Get prices for a specific date
-    logger.info("\n" + "=" * 60)
-    logger.info("Fetching stock prices for 2025-01-03")
-    logger.info("=" * 60)
-    data_specific = get_stock_prices(date='2025-01-03', stocks_csv=stocks_csv)
-    print_table(data_specific)
-    
-    # Save to CSV
-    CSVHandler.write_prices(data_recent, output_file)
+
+    data = get_stock_prices(date=args.date, stocks_csv=args.stocks_csv)
+    print_table(data)
+    CSVHandler.write_prices(data, args.output)
 
 
 if __name__ == "__main__":
