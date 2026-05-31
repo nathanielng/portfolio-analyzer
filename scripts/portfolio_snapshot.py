@@ -140,6 +140,17 @@ def aggregate_by_symbol(lots: List[Dict]) -> List[Dict]:
         tc = e['total_cost_sgd']
         gain = round(tv - tc, 2) if e['has_cost'] else None
         gain_pct = round((tv - tc) / tc * 100, 2) if (e['has_cost'] and tc > 0) else None
+
+        # Cost-weighted average annualised return across lots that have CAGR + known cost
+        ann_lots = [(l['ann_return_pct'], l['cost_sgd'])
+                    for l in e['lots']
+                    if l.get('ann_return_pct') is not None
+                    and l.get('years_held', 0) >= 1   # < 1yr CAGRs are too extreme to be meaningful
+                    and l['cost_sgd'] > 0]
+        ann_weight = sum(c for _, c in ann_lots)
+        ann_return = (round(sum(r * c for r, c in ann_lots) / ann_weight, 2)
+                      if ann_weight > 0 else None)
+
         result.append({
             'symbol':          sym,
             'currency':        e['currency'],
@@ -148,6 +159,7 @@ def aggregate_by_symbol(lots: List[Dict]) -> List[Dict]:
             'total_value_sgd': round(tv, 2),
             'total_gain_sgd':  gain,
             'gain_pct':        gain_pct,
+            'ann_return_pct':  ann_return,
             'weight_pct':      round(tv / total_portfolio * 100, 2),
             'accounts':        sorted(e['accounts']),
             'lots':            e['lots'],
@@ -193,6 +205,16 @@ def build_data(holdings: List[Dict]) -> Dict:
     total_cost = sum(l['cost_sgd'] for l in lots)
     total_gain = total_value - total_cost
 
+    # Portfolio-level cost-weighted annualised return (lots with ≥1yr history only)
+    ann_lots_p = [(l['ann_return_pct'], l['cost_sgd'])
+                  for l in lots
+                  if l.get('ann_return_pct') is not None
+                  and l.get('years_held', 0) >= 1
+                  and l['cost_sgd'] > 0]
+    ann_w = sum(c for _, c in ann_lots_p)
+    portfolio_ann_return = (round(sum(r * c for r, c in ann_lots_p) / ann_w, 2)
+                            if ann_w > 0 else None)
+
     # Capture USDSGD rate for the dashboard toggles
     usdsgd = fx_cache.get('USD') or get_fx_rate('USD')
 
@@ -206,10 +228,11 @@ def build_data(holdings: List[Dict]) -> Dict:
             'fx_cost_pct':        round(config.FX_CONVERSION_COST * 100, 2),
         },
         'summary': {
-            'total_value':    round(total_value, 2),
-            'total_cost':     round(total_cost, 2),
-            'total_gain':     round(total_gain, 2),
-            'total_gain_pct': round(total_gain / total_cost * 100, 2) if total_cost > 0 else None,
+            'total_value':       round(total_value, 2),
+            'total_cost':        round(total_cost, 2),
+            'total_gain':        round(total_gain, 2),
+            'total_gain_pct':    round(total_gain / total_cost * 100, 2) if total_cost > 0 else None,
+            'portfolio_ann_pct': portfolio_ann_return,  # cost-weighted CAGR, ≥1yr lots only
         },
         'lots':        lots,
         'by_symbol':   by_symbol,
@@ -313,6 +336,7 @@ tbody tr:hover td{background:#fafbfc}
           <div class="tgl-grp" id="gain-mode">
             <button class="tgl on" data-v="abs">S$</button>
             <button class="tgl"    data-v="pct">%</button>
+            <button class="tgl"    data-v="ann">Ann%</button>
           </div>
         </div>
       </div>
@@ -386,9 +410,10 @@ function fmtN(v,dp=2){ return v==null?'—':v.toLocaleString('en-SG',{minimumFra
 
 // ── KPI header ────────────────────────────────────────────────────────────
 const s=D.summary;
+const annStr = s.portfolio_ann_pct!=null ? ` · ${fmtP(s.portfolio_ann_pct)}/yr` : '';
 document.getElementById('kpis').innerHTML=[
   {lbl:'Total Value',   val:fmtV(s.total_value),  cls:''},
-  {lbl:'Total Gain',    val:(s.total_gain>=0?'+':'')+fmtV(s.total_gain)+' ('+fmtP(s.total_gain_pct)+')', cls:s.total_gain>=0?'pos':'neg'},
+  {lbl:'Total Gain',    val:(s.total_gain>=0?'+':'')+fmtV(s.total_gain)+' ('+fmtP(s.total_gain_pct)+annStr+')', cls:s.total_gain>=0?'pos':'neg'},
   {lbl:'Positions',     val:D.meta.n_lots+' lots / '+D.meta.n_symbols+' symbols', cls:''},
   {lbl:'1 USD',         val:'S$'+RATE.toFixed(4)+' spot', cls:''},
 ].map(k=>`<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val ${k.cls}">${k.val}</div></div>`).join('');
@@ -398,8 +423,8 @@ Chart.defaults.font.size=12;
 
 // ── FX note helper ────────────────────────────────────────────────────────
 function fxNote(ccy, mode){
-  // mode: 'val' | 'gain' | 'pct'
-  if(mode==='pct') return 'Percentage gain is currency-independent.';
+  if(mode==='pct') return 'Total gain % is currency-independent.';
+  if(mode==='ann') return 'Annualised return (CAGR) is currency-independent. Symbols with no contract dates are omitted.';
   const base = `Spot rate: 1 USD = S$${RATE.toFixed(4)} · Conv. cost: ~${FCOST}%`;
   return ccy==='USD' ? base+' (display only — no actual conversion)' : base;
 }
@@ -449,21 +474,36 @@ function updVal(){
 
 // ── Update: gain chart ────────────────────────────────────────────────────
 function updGain(){
-  const isPct = gainMode==='pct';
-  const div   = (!isPct && gainCcy==='USD') ? RATE : 1;
+  const isCcyIndep = gainMode==='pct' || gainMode==='ann';
+  const div = (!isCcyIndep && gainCcy==='USD') ? RATE : 1;
 
-  // dim/undim the currency toggle in % mode
-  document.getElementById('gain-ccy').classList.toggle('dim', isPct);
+  // dim CCY toggle when mode is currency-independent
+  document.getElementById('gain-ccy').classList.toggle('dim', isCcyIndep);
 
   let labels, values, colors;
-  if(isPct){
+
+  if(gainMode==='ann'){
+    const sorted = [...D.by_symbol]
+      .filter(s=>s.ann_return_pct!=null)
+      .sort((a,b)=>b.ann_return_pct-a.ann_return_pct);
+    labels = sorted.map(s=>s.symbol+' ('+fmtP(s.gain_pct)+' total)');
+    values = sorted.map(s=>s.ann_return_pct);
+    colors = sorted.map(s=>s.ann_return_pct>=0?'rgba(39,174,96,.75)':'rgba(231,76,60,.75)');
+    gainChart.options.scales.x.ticks.callback = v=>fmtP(v);
+    gainChart.options.plugins.tooltip.callbacks = {
+      label: ctx=>{
+        const sym=sorted[ctx.dataIndex];
+        return [`Ann. return: ${fmtP(ctx.raw)}`,`Total gain: ${fmtP(sym.gain_pct)}`,`Value: ${fmtV(sym.total_value_sgd)}`];
+      }
+    };
+  } else if(gainMode==='pct'){
     const sorted = [...bySymGain].sort((a,b)=>b.gain_pct-a.gain_pct);
     labels = sorted.map(s=>s.symbol);
     values = sorted.map(s=>s.gain_pct);
     colors = sorted.map(s=>s.gain_pct>=0?'rgba(39,174,96,.75)':'rgba(231,76,60,.75)');
     gainChart.options.scales.x.ticks.callback = v=>fmtP(v);
     gainChart.options.plugins.tooltip.callbacks = {
-      label: ctx=>{ const sym=sorted[ctx.dataIndex]; return [fmtP(ctx.raw), fmtV(sym.total_gain_sgd/div,gainCcy)+' total']; }
+      label: ctx=>{ const sym=sorted[ctx.dataIndex]; return [fmtP(ctx.raw), fmtV(sym.total_gain_sgd)+' total gain']; }
     };
   } else {
     labels = bySymGain.map(s=>s.symbol+' ('+fmtP(s.gain_pct)+')');
@@ -474,11 +514,12 @@ function updGain(){
       label: ctx=>{ const sym=bySymGain[ctx.dataIndex]; return [fmtV(ctx.raw,gainCcy), fmtP(sym.gain_pct)]; }
     };
   }
+
   gainChart.data.labels = labels;
   gainChart.data.datasets[0].data = values;
   gainChart.data.datasets[0].backgroundColor = colors;
   gainChart.update();
-  document.getElementById('gain-note').textContent = fxNote(gainCcy, isPct?'pct':'gain');
+  document.getElementById('gain-note').textContent = fxNote(gainCcy, gainMode);
 }
 
 // Initial render
