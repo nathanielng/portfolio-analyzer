@@ -2,3 +2,8 @@ Symbol,Company,Currency,Exchange,Notes
 ASML,ASML Holding NV,USD,NASDAQ,EUV lithography monopoly — upstream of all advanced chips
 000660.KS,SK Hynix,KRW,KRX,HBM memory supplier to NVIDIA
 TSM,Taiwan Semiconductor Mfg (ADR),USD,NYSE,USD ADR — 2330.TW (TWD) already in holdings
+NVDA,Nvidia,USD,NASDAQ,Core AI GPU — most important AI/semi name not in holdings
+AVGO,Broadcom Inc,USD,NASDAQ,AI networking chips and custom silicon for hyperscalers
+MSFT,Microsoft,USD,NASDAQ,Hyperscaler with deep OpenAI integration
+SMH,VanEck Semiconductor ETF,USD,NASDAQ,Benchmark for broad semiconductor exposure
+QQQM,Invesco Nasdaq-100 ETF,USD,NASDAQ,Broad tech-beta baseline
