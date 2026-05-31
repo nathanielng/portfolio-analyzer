@@ -78,13 +78,15 @@ def load_holdings(path: str) -> List[Dict]:
     with open(path, newline='') as f:
         reader = csv.DictReader(filter(lambda line: not line.startswith('#'), f))
         for row in reader:
+            cd = row.get('ContractDate', '').strip()
             rows.append({
-                'symbol':   row['Symbol'].strip(),
-                'quantity': float(row['Quantity']),
-                'avg_cost': _parse_avg_cost(row['AvgCost']),  # None = cost unknown
-                'currency': row['Currency'].strip().upper(),
-                'account':  row.get('Account', '').strip(),
-                'broker':   row.get('Broker', '').strip(),
+                'symbol':        row['Symbol'].strip(),
+                'quantity':      float(row['Quantity']),
+                'avg_cost':      _parse_avg_cost(row['AvgCost']),  # None = cost unknown
+                'currency':      row['Currency'].strip().upper(),
+                'account':       row.get('Account', '').strip(),
+                'broker':        row.get('Broker', '').strip(),
+                'contract_date': cd if cd.upper() not in ('NA', '') else None,
             })
     return rows
 
