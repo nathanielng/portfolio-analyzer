@@ -61,6 +61,18 @@ def ccy(amount: float, currency: Optional[str] = None) -> str:
 # Holdings loading
 # ---------------------------------------------------------------------------
 
+_UNKNOWN_COST = {'na', 'n/a', 'unknown', ''}
+
+
+def _parse_avg_cost(raw: str) -> Optional[float]:
+    """Return None if cost is unknown (NA / 0), otherwise the float value."""
+    s = raw.strip().lower()
+    if s in _UNKNOWN_COST:
+        return None
+    v = float(s)
+    return None if v == 0 else v
+
+
 def load_holdings(path: str) -> List[Dict]:
     rows = []
     with open(path, newline='') as f:
@@ -69,7 +81,7 @@ def load_holdings(path: str) -> List[Dict]:
             rows.append({
                 'symbol':   row['Symbol'].strip(),
                 'quantity': float(row['Quantity']),
-                'avg_cost': float(row['AvgCost']),
+                'avg_cost': _parse_avg_cost(row['AvgCost']),  # None = cost unknown
                 'currency': row['Currency'].strip().upper(),
                 'account':  row.get('Account', '').strip(),
                 'broker':   row.get('Broker', '').strip(),
@@ -194,13 +206,16 @@ def format_report(
     ]
     movers = []
     for h in sorted(holdings_data, key=lambda x: x['value_base'], reverse=True):
-        pl_pct = h.get('pl_pct', 0)
+        pl_pct = h.get('pl_pct')
+        cost_str = ccy(h['avg_cost_base']) if h.get('avg_cost_base') is not None else "—"
         current_str = ccy(h['current_base']) if h.get('current_base') is not None else "N/A"
+        pl_str = f"{pl_pct:+.2f}%" if pl_pct is not None else "—"
         lines.append(
-            f"| {h['symbol']} | {h['quantity']:.0f} | {ccy(h['avg_cost_base'])} | "
-            f"{current_str} | {ccy(h['value_base'])} | {pl_pct:+.2f}% | {h['account']} |"
+            f"| {h['symbol']} | {h['quantity']:.4g} | {cost_str} | "
+            f"{current_str} | {ccy(h['value_base'])} | {pl_str} | {h['account']} |"
         )
-        movers.append((h['symbol'], pl_pct))
+        if pl_pct is not None:
+            movers.append((h['symbol'], pl_pct))
     lines.append("")
 
     if len(movers) > 1:
@@ -272,7 +287,7 @@ def format_telegram(
         "",
     ]
 
-    movers = [(h['symbol'], h.get('pl_pct', 0)) for h in holdings_data]
+    movers = [(h['symbol'], h['pl_pct']) for h in holdings_data if h.get('pl_pct') is not None]
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
@@ -336,11 +351,23 @@ def _run(args) -> str:
             fx_cache[listing_ccy] = get_fx_rate(listing_ccy)
         fx = fx_cache[listing_ccy]
 
-        avg_cost_base = h['avg_cost'] * fx
+        avg_cost_base = h['avg_cost'] * fx if h['avg_cost'] is not None else None
         current_base = current_price * fx if current_price is not None else None
-        value_base = (current_base if current_base is not None else avg_cost_base) * h['quantity']
-        cost_base = avg_cost_base * h['quantity']
-        pl_pct = ((current_base - avg_cost_base) / avg_cost_base * 100) if current_base else 0.0
+
+        # Value: use current price if available, fall back to cost (or 0 if both unknown)
+        if current_base is not None:
+            value_base = current_base * h['quantity']
+        elif avg_cost_base is not None:
+            value_base = avg_cost_base * h['quantity']
+        else:
+            value_base = 0.0
+
+        cost_base = avg_cost_base * h['quantity'] if avg_cost_base is not None else 0.0
+        pl_pct = (
+            (current_base - avg_cost_base) / avg_cost_base * 100
+            if (current_base is not None and avg_cost_base)
+            else None  # None = unknown, distinct from 0%
+        )
 
         holdings_data.append({**h, 'avg_cost_base': avg_cost_base,
                                'current_base': current_base,
