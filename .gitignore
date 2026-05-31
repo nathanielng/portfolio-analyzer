@@ -23,6 +23,7 @@ data/*.json
 data/*.txt
 data/cache/
 data/upside/
+data/archive/
 !data/.gitkeep
 
 # OS
