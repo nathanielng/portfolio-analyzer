@@ -124,8 +124,15 @@ class HistoryFetcher:
         end_date = end_date or date.today().isoformat()
 
         frames: Dict[str, pd.Series] = {}
+        fetched_any = False  # track whether any network call was made
         for symbol in symbols:
-            df, _, _ = self.update_cache(symbol, interval, start_date, end_date)
+            # Pause between network fetches to avoid yfinance rate-limiting.
+            # Symbols already in cache return immediately with no delay.
+            df, cached_rows, fetched_rows = self.update_cache(symbol, interval, start_date, end_date)
+            if fetched_rows > 0:
+                if fetched_any:
+                    time.sleep(0.3)
+                fetched_any = True
             if df is not None and not df.empty:
                 series = df['Close'].copy()
                 series = series[series.index >= pd.Timestamp(start_date)]
