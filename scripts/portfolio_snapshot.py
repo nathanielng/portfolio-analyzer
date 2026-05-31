@@ -391,9 +391,10 @@ tbody tr:hover td{background:#fafbfc}
       <table id="tbl">
         <thead><tr>
           <th data-col="symbol">Symbol</th>
+          <th data-col="currency">Ccy</th>
           <th data-col="qty" class="abs-col">Qty</th>
-          <th data-col="avg_cost_sgd" class="abs-col">Avg Cost (SGD)</th>
-          <th data-col="current_price_sgd" class="abs-col">Current (SGD)</th>
+          <th data-col="avg_cost">Avg Cost</th>
+          <th data-col="current_price">Current</th>
           <th data-col="value_sgd" class="abs-col">Value (SGD)</th>
           <th data-col="gain_sgd" class="abs-col">Gain (SGD)</th>
           <th data-col="gain_pct">Gain %</th>
@@ -416,7 +417,7 @@ const FCOST  = D.meta.fx_cost_pct;        // e.g. 0.2
 const PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6',
                  '#1abc9c','#e67e22','#fd79a8','#00cec9','#55efc4',
                  '#fdcb6e','#6c5ce7','#a29bfe','#fab1a0','#74b9ff'];
-const CCY_SYM = {SGD:'S$',USD:'$',TWD:'NT$',GBP:'£',EUR:'€',KRW:'₩'};
+const CCY_SYM = {SGD:'S$',USD:'$',TWD:'NT$',GBP:'£',GBp:'p',EUR:'€',KRW:'₩'};
 
 function csym(c){ return CCY_SYM[c]||(c+' '); }
 function fmtV(v,ccy){ return v==null?'—':csym(ccy||D.meta.base_currency)+Math.abs(v).toLocaleString('en-SG',{maximumFractionDigits:0}); }
@@ -645,9 +646,10 @@ function renderTable(lots){
   document.getElementById('tbl-body').innerHTML=lots.map(l=>`
     <tr>
       <td><strong>${l.symbol}</strong></td>
+      <td>${l.currency}</td>
       <td class="abs-col">${fmtN(l.qty,4)}</td>
-      <td class="abs-col">${l.avg_cost_sgd!=null?fmtV(l.avg_cost_sgd):'<span class="na">—</span>'}</td>
-      <td class="abs-col">${l.current_price_sgd!=null?fmtV(l.current_price_sgd):'<span class="na">N/A</span>'}</td>
+      <td>${l.avg_cost!=null?fmtV(l.avg_cost,l.currency):'<span class="na">—</span>'}</td>
+      <td>${l.current_price!=null?fmtV(l.current_price,l.currency):'<span class="na">N/A</span>'}</td>
       <td class="abs-col">${fmtV(l.value_sgd)}</td>
       <td class="abs-col ${l.gain_sgd==null?'na':l.gain_sgd>=0?'pos':'neg'}">${l.gain_sgd==null?'—':(l.gain_sgd>=0?'+':'')+fmtV(l.gain_sgd)}</td>
       <td class="${l.gain_pct==null?'na':l.gain_pct>=0?'pos':'neg'}">${fmtP(l.gain_pct)}</td>
