@@ -256,9 +256,19 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f0f2f5;color:#2d3436}
 .hdr{background:linear-gradient(135deg,#2c3e50,#3498db);color:#fff;padding:24px 32px}
+.hdr-top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
 .hdr h1{font-size:1.6rem;font-weight:700;letter-spacing:-.5px}
 .hdr .sub{font-size:.8rem;opacity:.7;margin-top:2px}
 .kpis{display:flex;flex-wrap:wrap;gap:14px;margin-top:18px}
+/* Anonymise button */
+.anon-btn{background:rgba(255,255,255,.15);border:1.5px solid rgba(255,255,255,.35);color:#fff;
+          padding:8px 18px;border-radius:8px;cursor:pointer;font-size:.82rem;font-weight:700;
+          transition:all .2s;white-space:nowrap;margin-top:4px}
+.anon-btn:hover{background:rgba(255,255,255,.28)}
+body.anon .anon-btn{background:rgba(255,255,255,.95);color:#2c3e50;border-color:transparent}
+/* Anonymised state — hide absolute-value elements */
+body.anon .abs-col{display:none}
+body.anon .kpi-abs{opacity:0;pointer-events:none}
 .kpi{background:rgba(255,255,255,.12);border-radius:10px;padding:12px 20px;min-width:140px}
 .kpi .lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;opacity:.8}
 .kpi .val{font-size:1.4rem;font-weight:700;margin-top:3px}
@@ -304,8 +314,13 @@ tbody tr:hover td{background:#fafbfc}
 </head>
 <body>
 <div class="hdr">
-  <h1>Portfolio Dashboard</h1>
-  <div class="sub">Generated __GENERATED__ &nbsp;·&nbsp; Base currency: __BASE_CCY__</div>
+  <div class="hdr-top">
+    <div>
+      <h1>Portfolio Dashboard</h1>
+      <div class="sub">Generated __GENERATED__ &nbsp;·&nbsp; Base currency: __BASE_CCY__</div>
+    </div>
+    <button class="anon-btn" id="anon-btn">🔒 Anonymise</button>
+  </div>
   <div class="kpis" id="kpis"></div>
 </div>
 <div class="wrap">
@@ -376,11 +391,11 @@ tbody tr:hover td{background:#fafbfc}
       <table id="tbl">
         <thead><tr>
           <th data-col="symbol">Symbol</th>
-          <th data-col="qty">Qty</th>
-          <th data-col="avg_cost_sgd">Avg Cost (SGD)</th>
-          <th data-col="current_price_sgd">Current (SGD)</th>
-          <th data-col="value_sgd">Value (SGD)</th>
-          <th data-col="gain_sgd">Gain (SGD)</th>
+          <th data-col="qty" class="abs-col">Qty</th>
+          <th data-col="avg_cost_sgd" class="abs-col">Avg Cost (SGD)</th>
+          <th data-col="current_price_sgd" class="abs-col">Current (SGD)</th>
+          <th data-col="value_sgd" class="abs-col">Value (SGD)</th>
+          <th data-col="gain_sgd" class="abs-col">Gain (SGD)</th>
           <th data-col="gain_pct">Gain %</th>
           <th data-col="ann_return_pct">Ann. Return</th>
           <th data-col="years_held">Yrs Held</th>
@@ -408,15 +423,40 @@ function fmtV(v,ccy){ return v==null?'—':csym(ccy||D.meta.base_currency)+Math.
 function fmtP(v){ return v==null?'—':(v>0?'+':'')+v.toFixed(2)+'%'; }
 function fmtN(v,dp=2){ return v==null?'—':v.toLocaleString('en-SG',{minimumFractionDigits:dp,maximumFractionDigits:dp}); }
 
+// ── Anonymise state ───────────────────────────────────────────────────────
+let anon = false;
+
+function toggleAnon(){
+  anon = !anon;
+  document.body.classList.toggle('anon', anon);
+  document.getElementById('anon-btn').textContent = anon ? '🔓 Show Values' : '🔒 Anonymise';
+  // In anon mode absolute gain is meaningless — switch to % if currently abs
+  if(anon && gainMode==='abs'){
+    gainMode='pct';
+    document.querySelectorAll('#gain-mode .tgl').forEach(b=>b.classList.remove('on'));
+    document.querySelector('#gain-mode [data-v="pct"]').classList.add('on');
+  }
+  // Dim the [S$] gain-mode button so user knows it's unavailable
+  document.querySelector('#gain-mode [data-v="abs"]').classList.toggle('dim', anon);
+  updKPIs(); updVal(); updGain(); renderTable(currentLots);
+}
+document.getElementById('anon-btn').addEventListener('click', toggleAnon);
+
 // ── KPI header ────────────────────────────────────────────────────────────
 const s=D.summary;
-const annStr = s.portfolio_ann_pct!=null ? ` · ${fmtP(s.portfolio_ann_pct)}/yr` : '';
-document.getElementById('kpis').innerHTML=[
-  {lbl:'Total Value',   val:fmtV(s.total_value),  cls:''},
-  {lbl:'Total Gain',    val:(s.total_gain>=0?'+':'')+fmtV(s.total_gain)+' ('+fmtP(s.total_gain_pct)+annStr+')', cls:s.total_gain>=0?'pos':'neg'},
-  {lbl:'Positions',     val:D.meta.n_lots+' lots / '+D.meta.n_symbols+' symbols', cls:''},
-  {lbl:'1 USD',         val:'S$'+RATE.toFixed(4)+' spot', cls:''},
-].map(k=>`<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val ${k.cls}">${k.val}</div></div>`).join('');
+function updKPIs(){
+  const annStr = s.portfolio_ann_pct!=null ? ` · ${fmtP(s.portfolio_ann_pct)}/yr` : '';
+  const gainVal = anon
+    ? fmtP(s.total_gain_pct)+annStr
+    : (s.total_gain>=0?'+':'')+fmtV(s.total_gain)+' ('+fmtP(s.total_gain_pct)+annStr+')';
+  document.getElementById('kpis').innerHTML=[
+    {lbl:'Total Value', val:anon?'—':fmtV(s.total_value), cls:'', extra:'kpi-abs'},
+    {lbl:'Total Gain',  val:gainVal, cls:s.total_gain>=0?'pos':'neg', extra:''},
+    {lbl:'Positions',   val:D.meta.n_lots+' lots / '+D.meta.n_symbols+' symbols', cls:'', extra:''},
+    {lbl:'1 USD',       val:'S$'+RATE.toFixed(4)+' spot', cls:'', extra:''},
+  ].map(k=>`<div class="kpi ${k.extra}"><div class="lbl">${k.lbl}</div><div class="val ${k.cls}">${k.val}</div></div>`).join('');
+}
+updKPIs();
 
 Chart.defaults.font.family='-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif';
 Chart.defaults.font.size=12;
@@ -457,19 +497,32 @@ gainChart  = makeHBar('c-gain');
 
 // ── Update: value chart ───────────────────────────────────────────────────
 function updVal(){
-  const div = valCcy==='USD' ? RATE : 1;
-  valueChart.data.labels = bySymVal.map(s=>s.symbol);
-  valueChart.data.datasets[0].data = bySymVal.map(s=>+(s.total_value_sgd/div).toFixed(0));
-  valueChart.data.datasets[0].backgroundColor = PALETTE.slice(0,bySymVal.length);
-  valueChart.options.scales.x.ticks.callback = v=>fmtV(v,valCcy);
-  valueChart.options.plugins.tooltip.callbacks = {
-    label: ctx=>{
-      const sym=bySymVal[ctx.dataIndex];
-      return [fmtV(ctx.raw,valCcy), sym.weight_pct.toFixed(1)+'% of portfolio'];
-    }
-  };
+  // In anon mode always show weight %; CCY toggle is dimmed
+  document.getElementById('val-ccy').classList.toggle('dim', anon);
+  if(anon){
+    valueChart.data.labels = bySymVal.map(s=>s.symbol);
+    valueChart.data.datasets[0].data = bySymVal.map(s=>s.weight_pct);
+    valueChart.data.datasets[0].backgroundColor = PALETTE.slice(0,bySymVal.length);
+    valueChart.options.scales.x.ticks.callback = v=>v.toFixed(1)+'%';
+    valueChart.options.plugins.tooltip.callbacks = {
+      label: ctx=>[bySymVal[ctx.dataIndex].weight_pct.toFixed(2)+'% of portfolio']
+    };
+    document.getElementById('val-note').textContent = 'Showing allocation % only (anonymised).';
+  } else {
+    const div = valCcy==='USD' ? RATE : 1;
+    valueChart.data.labels = bySymVal.map(s=>s.symbol);
+    valueChart.data.datasets[0].data = bySymVal.map(s=>+(s.total_value_sgd/div).toFixed(0));
+    valueChart.data.datasets[0].backgroundColor = PALETTE.slice(0,bySymVal.length);
+    valueChart.options.scales.x.ticks.callback = v=>fmtV(v,valCcy);
+    valueChart.options.plugins.tooltip.callbacks = {
+      label: ctx=>{
+        const sym=bySymVal[ctx.dataIndex];
+        return [fmtV(ctx.raw,valCcy), sym.weight_pct.toFixed(1)+'% of portfolio'];
+      }
+    };
+    document.getElementById('val-note').textContent = fxNote(valCcy,'val');
+  }
   valueChart.update();
-  document.getElementById('val-note').textContent = fxNote(valCcy,'val');
 }
 
 // ── Update: gain chart ────────────────────────────────────────────────────
@@ -586,15 +639,17 @@ if(cagrLots.length){
 
 // ── Table ─────────────────────────────────────────────────────────────────
 const TAG={cash:'tag-cash',CPF:'tag-cpf',SRS:'tag-srs',taxable:'tag-taxable'};
+let currentLots = D.lots;
 function renderTable(lots){
+  currentLots = lots;
   document.getElementById('tbl-body').innerHTML=lots.map(l=>`
     <tr>
       <td><strong>${l.symbol}</strong></td>
-      <td>${fmtN(l.qty,4)}</td>
-      <td>${l.avg_cost_sgd!=null?fmtV(l.avg_cost_sgd):'<span class="na">—</span>'}</td>
-      <td>${l.current_price_sgd!=null?fmtV(l.current_price_sgd):'<span class="na">N/A</span>'}</td>
-      <td>${fmtV(l.value_sgd)}</td>
-      <td class="${l.gain_sgd==null?'na':l.gain_sgd>=0?'pos':'neg'}">${l.gain_sgd==null?'—':(l.gain_sgd>=0?'+':'')+fmtV(l.gain_sgd)}</td>
+      <td class="abs-col">${fmtN(l.qty,4)}</td>
+      <td class="abs-col">${l.avg_cost_sgd!=null?fmtV(l.avg_cost_sgd):'<span class="na">—</span>'}</td>
+      <td class="abs-col">${l.current_price_sgd!=null?fmtV(l.current_price_sgd):'<span class="na">N/A</span>'}</td>
+      <td class="abs-col">${fmtV(l.value_sgd)}</td>
+      <td class="abs-col ${l.gain_sgd==null?'na':l.gain_sgd>=0?'pos':'neg'}">${l.gain_sgd==null?'—':(l.gain_sgd>=0?'+':'')+fmtV(l.gain_sgd)}</td>
       <td class="${l.gain_pct==null?'na':l.gain_pct>=0?'pos':'neg'}">${fmtP(l.gain_pct)}</td>
       <td class="${l.ann_return_pct==null?'na':l.ann_return_pct>=0?'pos':'neg'}">${fmtP(l.ann_return_pct)}</td>
       <td>${l.years_held!=null?fmtN(l.years_held,1)+'y':'<span class="na">—</span>'}</td>
