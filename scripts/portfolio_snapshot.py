@@ -546,7 +546,31 @@ const PALETTE = ['#3498db','#e74c3c','#2ecc71','#f39c12','#9b59b6',
 const CCY_SYM = {SGD:'S$',USD:'$',TWD:'NT$',GBP:'£',GBp:'p',EUR:'€',KRW:'₩'};
 
 function csym(c){ return CCY_SYM[c]||(c+' '); }
-function fmtV(v,ccy){ return v==null?'—':csym(ccy||D.meta.base_currency)+Math.abs(v).toLocaleString('en-SG',{maximumFractionDigits:0}); }
+
+// Total monetary amounts (portfolio value, gain): always whole numbers
+function fmtV(v,ccy){
+  return v==null?'—':csym(ccy||D.meta.base_currency)+Math.abs(v).toLocaleString('en-SG',{maximumFractionDigits:0});
+}
+
+// Per-share prices: magnitude-aware decimals
+// ≥1000 → 0dp, ≥10 → 2dp, ≥1 → 3dp, ≥0.1 → 3dp, <0.1 → 4dp
+function fmtPrice(v,ccy){
+  if(v==null) return '—';
+  const a=Math.abs(v);
+  const dp = a>=1000?0 : a>=10?2 : a>=1?3 : a>=0.1?3 : 4;
+  return csym(ccy||D.meta.base_currency)+v.toLocaleString('en-SG',{minimumFractionDigits:dp,maximumFractionDigits:dp});
+}
+
+// Quantities: whole numbers get no decimals; fractional shares get up to 4dp (trailing zeros trimmed)
+function fmtQty(v){
+  if(v==null) return '—';
+  if(Math.abs(v-Math.round(v))<0.00005) return Math.round(v).toLocaleString('en-SG');
+  // Fractional: trim trailing zeros, cap at 4dp
+  const trimmed=v.toFixed(4).replace(/\.?0+$/,'');
+  const dp=Math.min((trimmed.split('.')[1]||'').length, 4);
+  return v.toLocaleString('en-SG',{minimumFractionDigits:dp,maximumFractionDigits:dp});
+}
+
 function fmtP(v){ return v==null?'—':(v>0?'+':'')+v.toFixed(2)+'%'; }
 function fmtN(v,dp=2){ return v==null?'—':v.toLocaleString('en-SG',{minimumFractionDigits:dp,maximumFractionDigits:dp}); }
 
@@ -773,9 +797,9 @@ function renderTable(lots){
     <tr>
       <td><strong>${l.symbol}</strong></td>
       <td>${l.currency}</td>
-      <td class="abs-col">${fmtN(l.qty,4)}</td>
-      <td>${l.avg_cost!=null?fmtV(l.avg_cost,l.currency):'<span class="na">—</span>'}</td>
-      <td>${l.current_price!=null?fmtV(l.current_price,l.currency):'<span class="na">N/A</span>'}</td>
+      <td class="abs-col">${fmtQty(l.qty)}</td>
+      <td>${l.avg_cost!=null?fmtPrice(l.avg_cost,l.currency):'<span class="na">—</span>'}</td>
+      <td>${l.current_price!=null?fmtPrice(l.current_price,l.currency):'<span class="na">N/A</span>'}</td>
       <td class="abs-col">${fmtV(l.value_sgd)}</td>
       <td class="abs-col ${l.gain_sgd==null?'na':l.gain_sgd>=0?'pos':'neg'}">${l.gain_sgd==null?'—':(l.gain_sgd>=0?'+':'')+fmtV(l.gain_sgd)}</td>
       <td class="${l.gain_pct==null?'na':l.gain_pct>=0?'pos':'neg'}">${fmtP(l.gain_pct)}</td>
