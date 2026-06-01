@@ -1,0 +1,104 @@
+# portfolio-daily-brief
+
+Generate a concise, decision-oriented daily brief: top positions, stocks to consider buying (ranked by diversification benefit against the current portfolio), and action flags — combining the local correlation matrix with live web search.
+
+## Project
+
+`~/code/portfolio-analyzer`
+
+## When to use
+
+Invoke `/portfolio-daily-brief` when the user wants:
+- A short morning read: what they hold + what to consider buying
+- Buy candidates filtered by how much they'd *diversify* the existing portfolio
+- Recent market/analyst news woven in, not just raw numbers
+
+This is the *opinionated* counterpart to `/portfolio-daily-report` (which is a pure valuation snapshot). The brief reasons about the portfolio and searches the web; it does not run a Python script.
+
+## Prerequisite — fresh data
+
+The brief reads `data/portfolio_data.json`, which must contain a correlation matrix.
+If the file is missing, stale (>24h), or has `"correlation": null`, regenerate it first:
+
+```bash
+cd ~/code/portfolio-analyzer
+source ~/.venv/bin/activate
+python scripts/portfolio_snapshot.py        # WITH correlation (needs --no-corr NOT set)
+```
+
+Check the `meta.generated` timestamp in the JSON; if it's old, note that in the brief header.
+
+## Steps
+
+### 1. Load portfolio data
+Read `data/portfolio_data.json`. Extract:
+- `summary`: total_value, total_gain_pct, portfolio_ann_pct
+- `meta.fx_rates.USDSGD`, `meta.generated`
+- `by_symbol[:5]`: top 5 by weight (weight_pct, gain_pct, ann_return_pct)
+- `correlation`: {symbols, matrix, watchlist}
+
+### 2. Rank watchlist candidates by diversification benefit
+For each symbol in `correlation.watchlist`, compute its **average correlation to held symbols** (those in `by_symbol`). Sort ascending — lowest avg correlation = most diversifying. Take the top 5.
+
+```
+held = {s.symbol for s in by_symbol}
+for w in correlation.watchlist:
+    wi = correlation.symbols.index(w)
+    corrs = [matrix[wi][correlation.symbols.index(h)] for h in held if h in correlation.symbols]
+    avg_corr[w] = mean(corrs)
+candidates = sorted(watchlist, key=lambda w: avg_corr[w])[:5]
+```
+
+### 3. Web search (skip if invoked with `--no-web`)
+Run **exactly 2** searches — stay focused, don't sprawl:
+1. `{top 3 candidates} stock news analyst {current month year}`
+2. `{largest position, usually AMZN} outlook AND Singapore STI banks {current month year}`
+
+Extract only: rating/price-target changes, earnings in the last 2 weeks, material product/macro news. Discard anything older than 2 weeks or generic.
+
+### 4. Write the brief
+Keep it under 3,500 chars (Telegram-friendly). Structure:
+
+```
+📊 Daily Brief — {date}
+Portfolio: S${value} · {gain}% total · {ann}%/yr · 1 USD = S${rate}
+{if data >24h old: "⚠ data from {generated}"}
+
+── TOP 5 POSITIONS ──
+{SYM}  {wt}%  {gain}% total  {ann}%/yr  {≤1 news hook}
+...
+
+── CONSIDER (ranked by diversification) ──
+{n}. {SYM}  corr={avg:+.2f}  {one-line why}
+   • {news bullet, ≤2}
+...
+
+── FLAGS ──
+• {deep losers (< -50%), concentration (top weight >40% or any name >30% of risk), cap breaches}
+```
+
+### 5. Concentration guard
+If `by_symbol[0].weight_pct > 40`, always include a flag:
+`⚠ {sym} is {wt}% of portfolio and dominates risk — consider trimming.`
+
+## Inputs
+
+| File | Purpose |
+|------|---------|
+| `data/portfolio_data.json` | Prices, weights, gains, correlation matrix (from `portfolio_snapshot.py`) |
+| `data/watchlist.csv` | Candidate symbols + company names |
+| `data/tickers.csv` | Ticker→name lookup |
+
+## Tone
+
+Terse and actionable. Numbers first, then the "so what". No preamble, no "in summary". One line per position, ≤2 bullets per candidate.
+
+## After running
+
+- To deliver via Telegram, the user can paste into their bot, or extend `daily_report.py`'s `TelegramSender`.
+- To act on a buy idea, suggest `/portfolio-rebalance`.
+- To save a thesis, suggest `/save-learnings`.
+
+## Disclaimer
+
+End every brief with: *Not financial advice — research-assistance only.* The buy candidates are ranked by **diversification benefit and recent news**, not by a return forecast; they are prompts for the user's own research, not recommendations.
