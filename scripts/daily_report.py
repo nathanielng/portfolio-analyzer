@@ -37,6 +37,7 @@ from src.fetchers import MacroFetcher, StooqFetcher, YFinanceFetcher
 from src.fetchers.news import NewsFetcher
 from src.utils.telegram import from_env as telegram_from_env
 from src.utils.freshness import mark_refreshed
+from src.utils import quote_cache
 
 load_dotenv()
 logging.basicConfig(level=logging.WARNING)
@@ -110,32 +111,51 @@ def find_holdings_file() -> str:
 # ---------------------------------------------------------------------------
 
 def fetch_price(symbol: str, yf_fetcher: YFinanceFetcher, stooq_fetcher: StooqFetcher) -> Dict:
-    result = yf_fetcher.fetch_price(symbol)
-    if result['price'] is not None:
-        return result
-    logger.info(f"yfinance returned None for {symbol}, trying Stooq")
-    return stooq_fetcher.fetch_price(symbol)
+    """Fetch a current quote (yfinance → Stooq fallback), via the shared quote cache.
+
+    Cached per symbol so a second script run in the same TTL window (e.g. the
+    08:00 / 08:10 cron pair) reuses the result instead of re-fetching.
+    """
+    def _produce() -> Dict:
+        result = yf_fetcher.fetch_price(symbol)
+        if result['price'] is not None:
+            return result
+        logger.info(f"yfinance returned None for {symbol}, trying Stooq")
+        return stooq_fetcher.fetch_price(symbol)
+
+    return quote_cache.cached(
+        f'quote:{symbol}', _produce,
+        cache_if=lambda r: r.get('price') is not None,  # never cache a failed fetch
+    )
 
 
 def get_fx_rate(from_currency: str, to_currency: Optional[str] = None) -> float:
-    """Spot FX rate from_currency → BASE_CURRENCY (or specified to_currency)."""
+    """Spot FX rate from_currency → BASE_CURRENCY (or specified to_currency), cached."""
     to = to_currency or config.BASE_CURRENCY
     if from_currency == to:
         return 1.0
-    try:
-        import requests
-        resp = requests.get(
-            f"https://api.exchangerate-api.com/v4/latest/{from_currency}", timeout=10
-        )
-        resp.raise_for_status()
-        rate = resp.json()['rates'].get(to)
-        if rate:
-            logger.info(f"FX {from_currency}→{to}: {rate}")
-            return float(rate)
-        logger.warning(f"FX: no rate found for {from_currency}→{to}")
-    except Exception as e:
-        logger.warning(f"FX fetch failed ({from_currency}→{to}): {e}")
-    return 1.0
+
+    def _produce() -> Optional[float]:
+        try:
+            import requests
+            resp = requests.get(
+                f"https://api.exchangerate-api.com/v4/latest/{from_currency}", timeout=10
+            )
+            resp.raise_for_status()
+            rate = resp.json()['rates'].get(to)
+            if rate:
+                logger.info(f"FX {from_currency}→{to}: {rate}")
+                return float(rate)
+            logger.warning(f"FX: no rate found for {from_currency}→{to}")
+        except Exception as e:
+            logger.warning(f"FX fetch failed ({from_currency}→{to}): {e}")
+        return None
+
+    rate = quote_cache.cached(
+        f'fx:{from_currency}>{to}', _produce,
+        cache_if=lambda r: r is not None,  # don't cache the failure fallback
+    )
+    return rate if rate is not None else 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -429,7 +449,12 @@ def main():
     parser.add_argument('--no-macro',    action='store_true', help='Skip FRED macro fetch')
     parser.add_argument('--no-news',     action='store_true', help='Skip news headlines')
     parser.add_argument('--no-telegram', action='store_true', help='Skip Telegram delivery')
+    parser.add_argument('--no-cache', action='store_true',
+                        help='Bypass the shared quote cache — force fresh price/FX fetches')
     args = parser.parse_args()
+
+    if args.no_cache:
+        quote_cache.ENABLED = False
 
     tg = None if args.no_telegram else telegram_from_env()
 

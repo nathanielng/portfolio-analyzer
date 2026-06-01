@@ -37,6 +37,9 @@ Also guard against a correlation-less file: if `data/portfolio_data.json` has
 If the data is older than the morning cron for any reason, note the `meta.generated`
 timestamp in the brief header.
 
+If the user explicitly wants the very latest prices (not the morning cron's),
+run `python scripts/portfolio_snapshot.py --no-cache` to bypass the shared quote cache.
+
 ## Steps
 
 ### 1. Load portfolio data

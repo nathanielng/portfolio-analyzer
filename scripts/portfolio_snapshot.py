@@ -35,6 +35,7 @@ from src.fetchers.history import HistoryFetcher, PRESETS, _preset_dates
 from src.fetchers.fx import FXConverter
 from src.analyzers.risk_metrics import RiskMetrics
 from src.utils.freshness import mark_refreshed
+from src.utils import quote_cache
 from scripts.daily_report import fetch_price, find_holdings_file, get_fx_rate, load_holdings
 
 load_dotenv()
@@ -937,7 +938,12 @@ def main() -> None:
                         help='Skip correlation matrix (faster, no historical fetch)')
     parser.add_argument('--corr-preset', choices=list(PRESETS), default='1y',
                         help='History period for correlation (default: 1y)')
+    parser.add_argument('--no-cache', action='store_true',
+                        help='Bypass the shared quote cache — force fresh price/FX fetches')
     args = parser.parse_args()
+
+    if args.no_cache:
+        quote_cache.ENABLED = False
 
     holdings_path = args.holdings or find_holdings_file()
     holdings = load_holdings(holdings_path)

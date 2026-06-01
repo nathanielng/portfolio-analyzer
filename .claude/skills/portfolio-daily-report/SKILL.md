@@ -27,7 +27,8 @@ python -m src.utils.freshness check daily_report 18
 python scripts/daily_report.py
 ```
 The script writes a freshness marker (`data/.refresh.json`) on success, so a later
-invocation the same day will report FRESH.
+invocation the same day will report FRESH. Prices/FX come from a shared TTL cache
+(`data/.quotes.json`); pass `--no-cache` to force fresh quotes.
 
 With options:
 ```bash
