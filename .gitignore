@@ -25,6 +25,7 @@ data/cache/
 data/upside/
 data/archive/
 !data/.gitkeep
+!data/tickers.csv     # public ticker→name lookup, no personal data
 
 # OS
 .DS_Store
