@@ -15,11 +15,19 @@ Invoke `/portfolio-daily-report` when the user wants:
 
 ## How to run
 
+First check freshness — skip the refresh if this morning's cron already ran:
 ```bash
 cd ~/code/portfolio-analyzer
 source ~/.venv/bin/activate
+python -m src.utils.freshness check daily_report 18
+```
+- Exit 0 (FRESH): data is current — just read the latest `output/daily-report-*.md` instead of re-running.
+- Exit 1 (STALE): run the refresh:
+```bash
 python scripts/daily_report.py
 ```
+The script writes a freshness marker (`data/.refresh.json`) on success, so a later
+invocation the same day will report FRESH.
 
 With options:
 ```bash

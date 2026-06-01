@@ -36,6 +36,7 @@ from src import config
 from src.fetchers import MacroFetcher, StooqFetcher, YFinanceFetcher
 from src.fetchers.news import NewsFetcher
 from src.utils.telegram import from_env as telegram_from_env
+from src.utils.freshness import mark_refreshed
 
 load_dotenv()
 logging.basicConfig(level=logging.WARNING)
@@ -418,6 +419,7 @@ def _run(args) -> str:
         else:
             print("Telegram not configured — skipping (set TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID)")
 
+    mark_refreshed('daily_report')
     return str(out_path)
 
 

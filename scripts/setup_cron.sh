@@ -19,10 +19,11 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_PYTHON="${HOME}/.venv/bin/python"
-SCRIPT="${REPO_DIR}/scripts/daily_report.py"
+REPORT_SCRIPT="${REPO_DIR}/scripts/daily_report.py"
+SNAPSHOT_SCRIPT="${REPO_DIR}/scripts/portfolio_snapshot.py"
 LOG_DIR="${HOME}/portfolio-reports"
 LOG_FILE="${LOG_DIR}/daily.log"
-CRON_TAG="portfolio-analyzer/daily_report"   # unique marker for idempotency check
+CRON_TAG="portfolio-analyzer"   # shared marker; both jobs carry it for idempotency
 
 # ── Validate environment ────────────────────────────────────────────────────
 if [ ! -f "${VENV_PYTHON}" ]; then
@@ -31,39 +32,36 @@ if [ ! -f "${VENV_PYTHON}" ]; then
     exit 1
 fi
 
-if [ ! -f "${SCRIPT}" ]; then
-    echo "ERROR: Script not found at ${SCRIPT}"
-    exit 1
-fi
+for s in "${REPORT_SCRIPT}" "${SNAPSHOT_SCRIPT}"; do
+    if [ ! -f "${s}" ]; then echo "ERROR: Script not found at ${s}"; exit 1; fi
+done
 
 # ── Create log directory ────────────────────────────────────────────────────
 mkdir -p "${LOG_DIR}"
 echo "Log directory ready: ${LOG_DIR}"
 
-# ── Build cron line ─────────────────────────────────────────────────────────
-# 0 8 * * * = 8:00 AM every day (local system time)
-CRON_LINE="0 8 * * * cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${SCRIPT}\" >> \"${LOG_FILE}\" 2>&1  # ${CRON_TAG}"
+# ── Build cron lines ────────────────────────────────────────────────────────
+# Two jobs, staggered to avoid hammering yfinance simultaneously:
+#   08:00  daily_report.py     → valuation snapshot + macro + Telegram (refreshes portfolio_snapshot.json)
+#   08:10  portfolio_snapshot.py → full data + correlation matrix       (refreshes portfolio_data.json)
+# Both write a freshness marker (data/.refresh.json) so interactive skill
+# invocations the same day skip the slow refresh.
+REPORT_LINE="0 8 * * * cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${REPORT_SCRIPT}\" >> \"${LOG_FILE}\" 2>&1  # ${CRON_TAG}/daily_report"
+SNAPSHOT_LINE="10 8 * * * cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${SNAPSHOT_SCRIPT}\" >> \"${LOG_FILE}\" 2>&1  # ${CRON_TAG}/portfolio_snapshot"
 
 # ── Install (idempotent) ────────────────────────────────────────────────────
-# Note: crontab -l exits non-zero when no crontab exists; use || true to handle.
+# Strip any existing portfolio-analyzer lines, then add the current pair.
 EXISTING_CRON=$(crontab -l 2>/dev/null || true)
+CLEANED=$(echo "${EXISTING_CRON}" | grep -vF "${CRON_TAG}/" || true)
 
-if echo "${EXISTING_CRON}" | grep -qF "${CRON_TAG}"; then
-    echo "Cron job already installed:"
-    echo "${EXISTING_CRON}" | grep "${CRON_TAG}"
-    echo ""
-    echo "Nothing changed. To update it, remove the existing line with: crontab -e"
-    exit 0
-fi
-
-(echo "${EXISTING_CRON}"; echo "${CRON_LINE}") | crontab -
+printf '%s\n%s\n%s\n' "${CLEANED}" "${REPORT_LINE}" "${SNAPSHOT_LINE}" | grep -v '^$' | crontab -
 
 echo ""
-echo "Cron job installed successfully:"
-crontab -l 2>/dev/null | grep "${CRON_TAG}"
+echo "Cron jobs installed:"
+crontab -l 2>/dev/null | grep "${CRON_TAG}/"
 echo ""
-echo "Test it now with:"
-echo "  cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${SCRIPT}\" --no-telegram"
+echo "Test them now with:"
+echo "  cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${REPORT_SCRIPT}\" --no-telegram"
+echo "  cd \"${REPO_DIR}\" && \"${VENV_PYTHON}\" \"${SNAPSHOT_SCRIPT}\""
 echo ""
-echo "View logs with:"
-echo "  tail -f ${LOG_FILE}"
+echo "View logs with:  tail -f ${LOG_FILE}"

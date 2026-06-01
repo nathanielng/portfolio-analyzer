@@ -34,6 +34,7 @@ from src.fetchers import StooqFetcher, YFinanceFetcher
 from src.fetchers.history import HistoryFetcher, PRESETS, _preset_dates
 from src.fetchers.fx import FXConverter
 from src.analyzers.risk_metrics import RiskMetrics
+from src.utils.freshness import mark_refreshed
 from scripts.daily_report import fetch_price, find_holdings_file, get_fx_rate, load_holdings
 
 load_dotenv()
@@ -956,6 +957,7 @@ def main() -> None:
         )
 
     save_outputs(data)
+    mark_refreshed('portfolio_data')
 
 
 if __name__ == '__main__':
