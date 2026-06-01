@@ -42,7 +42,7 @@ def get_stock_prices(
     date: Optional[str] = None,
     backend: Optional[str] = None,
     convert_usd: bool = True,
-    stocks_csv: str = 'data/stocks.csv'
+    stocks_csv: str = 'data/tickers.csv'
 ) -> List[Dict]:
     """
     Fetch stock prices for a given date (or most recent if date is None).
@@ -151,7 +151,7 @@ def main():
         '--date', default=None,
         help='Fetch for a specific date (YYYY-MM-DD). Default: most recent close.'
     )
-    parser.add_argument('--stocks-csv', default=os.getenv('STOCKS_CSV', 'data/stocks.csv'))
+    parser.add_argument('--stocks-csv', default=os.getenv('STOCKS_CSV', 'data/tickers.csv'))
     parser.add_argument('--output', default=os.getenv('OUTPUT_FILE', 'output/stock_prices.csv'))
     args = parser.parse_args()
 

@@ -64,7 +64,7 @@ def main():
     logger.info("=" * 80)
 
     # Configuration
-    stocks_csv = os.getenv('STOCKS_CSV', 'data/stocks.csv')
+    stocks_csv = os.getenv('STOCKS_CSV', 'data/tickers.csv')
     output_dir = os.getenv('OUTPUT_DIR', 'output')
     risk_free_rate = float(os.getenv('RISK_FREE_RATE', '0.04'))  # 4% default
 
