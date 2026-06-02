@@ -38,3 +38,9 @@ Thumbs.db
 # Personal drafts / notes (keep local)
 BLOG.md
 BLOG2.md
+PROMPTS.md
+
+# Conversation exports (contain full session transcript — never commit)
+stock-analysis.txt
+*-analysis.txt
+claude-export*.txt

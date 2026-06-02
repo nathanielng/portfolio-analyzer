@@ -13,7 +13,7 @@
 | Investor type | Retail (limited time, free tools) |
 | Tax residence | **Singapore** (no capital-gains tax, no tax on most foreign dividends) |
 | Bank accounts | **SGD** (home) + **USD** account → can settle US trades without forced FX |
-| Brokers | **Broker-A** (a brokerage), **Broker-B**, **Broker-C** (a brokerage), **Broker-D** |
+| Brokers | **Broker-A**, **Broker-B**, **Broker-C**, **Broker-D** (mix of SG-local and US/global) |
 | Trading frequency | ~1–3 trades/month (≈12–36/yr) — deliberate, not day-trading |
 | Universe | Mix of broad ETFs + AI/semiconductor stocks (NVDA, GOOGL, SK Hynix, ASML, TSMC, etc.) + AI thematic ETFs |
 | Selection unit | A **diversified portfolio/basket with explicit weights** — *not* individual stock bets |
@@ -95,7 +95,7 @@ For AI/semi thematic exposure, look for UCITS equivalents (e.g. UCITS semiconduc
 |---|---|---|
 | **UCITS ETFs (LSE/Xetra)**, ASML.AS (EUR), SK Hynix (KRW), TSMC TWD, multi-currency | **Broker-D** | Widest global market access, lowest FX spreads, true multi-currency cash |
 | **US stocks** (NVDA, GOOGL, TSM ADR) | **Broker-C** or **Broker-D** | Low US commissions; fund the USD leg from your USD account to avoid FX |
-| **SGX-listed** ETFs/stocks, SRS investing | **Broker-A** or **Broker-B** | Local SGX access; Broker-B integrates with DBS banking; Broker-A broad global reach |
+| **SGX-listed** ETFs/stocks, SRS investing | **Broker-A** or **Broker-B** | Local SGX access; one integrates with a SG bank, the other has broad global reach |
 | Custody comfort / local support | Broker-A, Broker-B | Established SG names |
 
 **Practical routing rules:**
