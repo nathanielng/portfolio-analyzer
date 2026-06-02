@@ -40,9 +40,10 @@ import pandas as pd
 from dotenv import load_dotenv
 
 from src import config
+from src.fetchers import StooqFetcher, YFinanceFetcher
 from src.fetchers.history import HistoryFetcher
 from src.fetchers.fx import FXConverter
-from scripts.daily_report import find_holdings_file, load_holdings, get_fx_rate
+from scripts.daily_report import find_holdings_file, load_holdings, get_fx_rate, fetch_price
 
 load_dotenv()
 logging.basicConfig(level=logging.WARNING)
@@ -166,6 +167,21 @@ def build_growth(holdings: List[Dict]) -> Dict:
             'gain_pct': round((mkt - inv) / inv * 100, 2) if inv > 0 else None,
         })
 
+    # --- Endpoint reconciliation with the dashboard -------------------------
+    # Prefer the dashboard's own stored values (data/portfolio_data.json) so the
+    # two views agree EXACTLY — same prices, FX, instant. A fresh fetch would
+    # price at a different moment and re-introduce a gap. Fall back to live spot.
+    dated_spot, undated_spot, nocost_spot, full_value, source = _reconcile_endpoint(
+        dated, undated, no_cost
+    )
+
+    # Pin the chart's last point to the dated-lots value at the dashboard's pricing
+    if series:
+        inv_last = series[-1]['invested']
+        series[-1]['value'] = round(dated_spot, 2)
+        series[-1]['gain'] = round(dated_spot - inv_last, 2)
+        series[-1]['gain_pct'] = round((dated_spot - inv_last) / inv_last * 100, 2) if inv_last else None
+
     latest = series[-1] if series else {}
     return {
         'meta': {
@@ -174,13 +190,63 @@ def build_growth(holdings: List[Dict]) -> Dict:
             'start':         series[0]['date'] if series else None,
             'end':           series[-1]['date'] if series else None,
             'n_points':      len(series),
+            'full_value':    round(full_value, 2),       # all lots (= dashboard total)
+            'shown_value':   round(dated_spot, 2),       # dated lots only (what the chart plots)
             'undated_lots':  sorted({h['symbol'] for h in undated}),
-            'undated_value': round(undated_value, 2),
+            'undated_value': round(undated_spot, 2),
             'excluded_no_cost': sorted({h['symbol'] for h in no_cost}),
+            'nocost_value':  round(nocost_spot, 2),
+            'endpoint_source': source,                    # 'dashboard' or 'live spot'
         },
         'latest': latest,
         'series': series,
     }
+
+
+def _reconcile_endpoint(dated, undated, no_cost):
+    """Return (dated_value, undated_value, nocost_value, full_value, source).
+
+    Prefer data/portfolio_data.json (the dashboard's stored, same-instant values)
+    so the growth chart and dashboard agree exactly. Fall back to a live spot
+    fetch if that file is absent.
+    """
+    pdata = DATA_DIR / 'portfolio_data.json'
+    if pdata.exists():
+        try:
+            d = json.loads(pdata.read_text())
+            lots = d['lots']
+            hcost = lambda l: l.get('avg_cost') is not None
+            hdate = lambda l: bool(l.get('contract_date'))
+            dated_v   = sum(l['value_sgd'] for l in lots if hcost(l) and hdate(l))
+            undated_v = sum(l['value_sgd'] for l in lots if hcost(l) and not hdate(l))
+            nocost_v  = sum(l['value_sgd'] for l in lots if not hcost(l))
+            full_v    = d['summary']['total_value']
+            print(f"Endpoint reconciled to dashboard (data/portfolio_data.json, {d['meta']['generated']})")
+            return dated_v, undated_v, nocost_v, full_v, 'dashboard'
+        except Exception as e:
+            logger.warning(f"Could not read portfolio_data.json ({e}); falling back to live spot")
+
+    # Fallback: live spot fetch (different instant than the dashboard)
+    print("portfolio_data.json not found — fetching live spot prices...")
+    yf, stooq = YFinanceFetcher(), StooqFetcher()
+    px: Dict[str, Optional[float]] = {}
+    fxr: Dict[str, float] = {}
+
+    def val(h) -> float:
+        sym, ccy = h['symbol'], h['currency']
+        if sym not in px:
+            px[sym] = fetch_price(sym, yf, stooq)['price']
+        if px[sym] is None:
+            return 0.0
+        if ccy not in fxr:
+            fxr[ccy] = get_fx_rate(ccy)
+        pence = 0.01 if ccy in _PENCE else 1.0
+        return h['quantity'] * px[sym] * fxr[ccy] * pence
+
+    dated_v   = sum(val(h) for h in dated)
+    undated_v = sum(val(h) for h in undated)
+    nocost_v  = sum(val(h) for h in no_cost)
+    return dated_v, undated_v, nocost_v, dated_v + undated_v + nocost_v, 'live spot'
 
 
 # ---------------------------------------------------------------------------
@@ -229,7 +295,8 @@ const fmtP = v => v==null ? '—' : (v>0?'+':'')+v.toFixed(1)+'%';
 
 const L = D.latest;
 document.getElementById('kpis').innerHTML = [
-  {l:'Current Value', v: fmt(L.value)},
+  {l:'Full Portfolio (all lots)', v: fmt(D.meta.full_value)},
+  {l:'Shown Here (dated lots)', v: fmt(D.meta.shown_value)},
   {l:'Invested Capital', v: fmt(L.invested)},
   {l:'Capital Gains', v: fmt(L.gain)+' ('+fmtP(L.gain_pct)+')'},
 ].map(k=>`<div class="kpi"><div class="lbl">${k.l}</div><div class="val">${k.v}</div></div>`).join('');
@@ -266,9 +333,10 @@ new Chart(document.getElementById('chart'), {
 });
 
 // Caveats
-let notes = ['Green band above the blue line = unrealised capital gains; below = underwater. Weekly resolution. The early underwater stretch is real — Banyan Tree and COSCO fell sharply after 2008 and never recovered.'];
-if(D.meta.undated_lots.length) notes.push('Excluded from this timeline (no purchase date on record, ~'+fmt(D.meta.undated_value)+' current value): '+D.meta.undated_lots.join(', ')+'. Add ContractDate in holdings.csv to include them.');
-if(D.meta.excluded_no_cost.length) notes.push('Excluded (no cost basis recorded): '+D.meta.excluded_no_cost.join(', ')+'.');
+let notes = ['This timeline plots only lots with both a cost and a purchase date ('+fmt(D.meta.shown_value)+'). Your full portfolio is '+fmt(D.meta.full_value)+' — the difference is excluded lots (below). The final point uses today’s spot price; earlier points are weekly closes.'];
+notes.push('Green band above the blue line = unrealised capital gains; below = underwater. The early underwater stretch is real — Banyan Tree and COSCO fell sharply after 2008 and never recovered.');
+if(D.meta.undated_lots.length) notes.push('Excluded — no purchase date (~'+fmt(D.meta.undated_value)+'): '+D.meta.undated_lots.join(', ')+'. Add ContractDate in holdings.csv to include them.');
+if(D.meta.excluded_no_cost.length) notes.push('Excluded — no cost basis (~'+fmt(D.meta.nocost_value)+'): '+D.meta.excluded_no_cost.join(', ')+'.');
 document.getElementById('note').innerHTML = notes.map(n=>'• '+n).join('<br>');
 </script>
 </body>
@@ -304,18 +372,19 @@ def main() -> None:
     print(f"Loaded {len(holdings)} lots")
 
     data = build_growth(holdings)
-    L = data['latest']
+    L, m = data['latest'], data['meta']
+    bc = m['base_currency']
     print(f"\n{'='*56}")
-    print(f"Current value:    {data['meta']['base_currency']} {L['value']:,.0f}")
-    print(f"Invested capital: {data['meta']['base_currency']} {L['invested']:,.0f}")
-    print(f"Capital gains:    {data['meta']['base_currency']} {L['gain']:,.0f} ({L['gain_pct']:+.1f}%)")
-    print(f"(timeline covers dated lots only)")
-    if data['meta']['undated_lots']:
-        bc = data['meta']['base_currency']
-        print(f"Excluded — no purchase date (~{bc} {data['meta']['undated_value']:,.0f} now): "
-              f"{', '.join(data['meta']['undated_lots'])}")
-    if data['meta']['excluded_no_cost']:
-        print(f"Excluded — no cost basis: {', '.join(data['meta']['excluded_no_cost'])}")
+    print(f"Full portfolio (all lots, daily spot): {bc} {m['full_value']:,.0f}")
+    print(f"Shown on chart (dated lots only):      {bc} {m['shown_value']:,.0f}")
+    print(f"  Invested capital: {bc} {L['invested']:,.0f}")
+    print(f"  Capital gains:    {bc} {L['gain']:,.0f} ({L['gain_pct']:+.1f}%)")
+    if m['undated_lots']:
+        print(f"Excluded — no purchase date (~{bc} {m['undated_value']:,.0f}): "
+              f"{', '.join(m['undated_lots'])}")
+    if m['excluded_no_cost']:
+        print(f"Excluded — no cost basis (~{bc} {m['nocost_value']:,.0f}): "
+              f"{', '.join(m['excluded_no_cost'])}")
     print('='*56)
 
     save_outputs(data)
