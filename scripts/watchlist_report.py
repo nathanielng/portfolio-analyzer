@@ -88,7 +88,7 @@ def calculate_metrics(
     prices_df: pd.DataFrame,
     benchmark_df: pd.DataFrame,
     symbol: str,
-) -> Dict[str, float]:
+) -> Dict:
     """
     Calculate all metrics for a symbol given price history and benchmark.
 
@@ -98,7 +98,7 @@ def calculate_metrics(
         symbol: Symbol name (for logging)
 
     Returns:
-        Dictionary of metrics
+        Dictionary of metrics and sparkline data
     """
     if prices_df.empty or benchmark_df.empty:
         return {}
@@ -160,6 +160,10 @@ def calculate_metrics(
         tracking_error = (price_returns - benchmark_returns_series).std() * (252 ** 0.5)
         info_ratio = float((excess_return * 252 / 100) / tracking_error) if tracking_error > 0 else 0
 
+        # Generate sparkline data (normalized prices for charting, last 50 points max)
+        sparkline_prices = [float(p) for p in prices_arr[-50:]]
+        sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index[-50:]]
+
         return {
             'return': round(total_return, 2),
             'volatility': round(volatility, 2),
@@ -170,6 +174,8 @@ def calculate_metrics(
             'alpha': round(alpha * 100, 2),
             'information_ratio': round(info_ratio, 2),
             'benchmark_return': round(benchmark_total_return, 2),
+            'sparkline_prices': sparkline_prices,
+            'sparkline_dates': sparkline_dates,
         }
     except Exception as e:
         logger.error(f"Error calculating metrics for {symbol}: {e}")
