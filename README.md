@@ -221,6 +221,70 @@ mkdir -p ~/portfolio-reports
 3. Visit `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the `chat.id` value
 4. Add both to your `.env` file
 
+## Stock Watchlist Dashboard
+
+Interactive HTML dashboard for viewing historical stock performance across multiple timeframes with comprehensive metrics and SPY benchmark comparison.
+
+### Quick Start
+
+1. **Generate watchlist data** (fetches history from cache, calculates metrics):
+```bash
+python scripts/watchlist_report.py
+```
+
+2. **Open the dashboard**:
+```bash
+# Option 1: Direct file (simplest)
+open output/watchlist.html
+
+# Option 2: Serve via HTTP
+cd output && python3 -m http.server 8000
+# Then visit http://localhost:8000/watchlist.html
+```
+
+### Features
+
+- 📊 **Multiple Timeframes**: 7d, 30d, 3m, 6m, 1y, 2y, 5y performance
+- 📈 **Rich Metrics**: Return, volatility, max drawdown, Sharpe ratio, Sortino ratio, beta, alpha, information ratio
+- 🎯 **SPY Benchmark**: Color-coded performance vs S&P 500 (green = outperformance, red = underperformance)
+- 🔍 **Interactive**:
+  - Toggle display modes (returns, volatility, or all metrics)
+  - Select which metrics to show via checkboxes
+  - Hover over `?` icons for metric explanations
+- 📱 **Responsive**: Works on desktop and mobile
+- 🧮 **Watchlist Configuration**: Edit `data/watchlist.csv` to add/remove symbols
+
+### Watchlist Configuration
+
+Edit `data/watchlist.csv` to customize your watchlist:
+```csv
+Symbol,Company,Currency,Exchange,Notes
+ASML,ASML Holding NV,USD,NASDAQ,EUV lithography monopoly
+NVDA,Nvidia,USD,NASDAQ,Core AI GPU
+MSFT,Microsoft,USD,NASDAQ,Hyperscaler with OpenAI integration
+SMH,VanEck Semiconductor ETF,USD,NASDAQ,Broad semiconductor exposure
+```
+
+The dashboard will analyze all symbols in the watchlist whenever you run `watchlist_report.py`.
+
+### Data Architecture
+
+The watchlist system uses a clean separation of concerns:
+
+1. **Data Generation** (`scripts/watchlist_report.py`):
+   - Reads symbols from `data/watchlist.csv`
+   - Loads cached OHLC history (via `fetch_history.py`)
+   - Calculates metrics for each symbol and timeframe
+   - Outputs `output/watchlist-data.json`
+
+2. **Visualization** (`output/watchlist.html`):
+   - Loads JSON data dynamically
+   - Renders interactive table with color coding
+   - Provides metric explanations via tooltips
+   - No server-side dependencies — pure HTML/CSS/JavaScript
+
+This keeps data and UI decoupled: regenerate data by re-running the script, and the dashboard automatically uses the latest results on reload.
+
 ## License
 
 MIT License
