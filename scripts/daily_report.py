@@ -602,13 +602,21 @@ def format_telegram(
     lines.append(" | ".join(returns_parts))
     lines.append("")
 
-    # Deduplicate movers by symbol: 1Y return for positions >= 1Y, YTD for newer
+    # Deduplicate movers: use 1Y stock return where available, otherwise cost-based P&L
     from datetime import timedelta
     symbol_returns = {}
-    symbol_timeframe = {}  # Track which timeframe for each symbol
+    symbol_timeframe = {}
     today = date.today()
     date_1y_ago = (today - timedelta(days=365)).isoformat()
-    year_start = f"{today.year}-01-01"
+
+    # Load 1Y stock performance data if available
+    position_history = {}
+    position_history_path = PROJECT_ROOT / 'data' / 'position_history.json'
+    if position_history_path.exists():
+        try:
+            position_history = json.loads(position_history_path.read_text())
+        except Exception as e:
+            logger.warning(f"Could not load position_history: {e}")
 
     for h in holdings_data:
         if h['symbol'] in EXCLUDED_SYMBOLS:
@@ -619,9 +627,12 @@ def format_telegram(
         if pl_pct is None:
             continue
 
-        # Determine timeframe: 1Y if held >= 1Y, otherwise YTD
-        if contract_date and contract_date > date_1y_ago:
-            timeframe = 'YTD'  # Position < 1Y old
+        # Check if we have 1Y stock return data
+        if h['symbol'] in position_history and 'return_1y' in position_history[h['symbol']]:
+            pl_pct = position_history[h['symbol']]['return_1y']
+            timeframe = '1Y'
+        elif contract_date and contract_date > date_1y_ago:
+            timeframe = 'YTD'  # Position < 1Y old, no historical data
         else:
             timeframe = '1Y'   # Position >= 1Y old
 
@@ -654,7 +665,8 @@ def format_telegram(
 
     if losers:
         labels = [f"{s} {p:+.1f}%" for s, p in losers]
-        loser_timeframe = "YTD" if all(symbol_timeframe.get(s) == 'YTD' for s, _ in losers) else "1Y"
+        loser_timeframes = [symbol_timeframe.get(s, '1Y') for s, _ in losers]
+        loser_timeframe = loser_timeframes[0] if len(set(loser_timeframes)) == 1 else "Mixed"
         lines.append("▼ " + "  ".join(labels) + f" ({loser_timeframe})")
     if gainers or losers:
         lines.append("")
