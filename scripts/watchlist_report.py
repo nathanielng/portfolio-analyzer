@@ -168,7 +168,10 @@ def calculate_metrics(
         sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index]
 
         bench_key = f'benchmark_return_{benchmark_name.lower()}'
-        return {
+        sparkline_key_prices = f'sparkline_prices_{benchmark_name.lower()}'
+        sparkline_key_dates = f'sparkline_dates_{benchmark_name.lower()}'
+
+        result = {
             'return': round(total_return, 2),
             'volatility': round(volatility, 2),
             'max_drawdown': round(max_drawdown, 2),
@@ -178,9 +181,17 @@ def calculate_metrics(
             'alpha': round(alpha * 100, 2),
             'information_ratio': round(info_ratio, 2),
             bench_key: round(benchmark_total_return, 2),
-            'sparkline_prices': sparkline_prices,
-            'sparkline_dates': sparkline_dates,
         }
+
+        # Add sparkline data for all benchmarks
+        if benchmark_name == 'SPY':
+            result['sparkline_prices'] = sparkline_prices
+            result['sparkline_dates'] = sparkline_dates
+        else:
+            result[sparkline_key_prices] = sparkline_prices
+            result[sparkline_key_dates] = sparkline_dates
+
+        return result
     except Exception as e:
         logger.error(f"Error calculating metrics for {symbol}: {e}")
         import traceback
