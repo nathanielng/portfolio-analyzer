@@ -47,6 +47,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 SNAPSHOT_PATH = PROJECT_ROOT / 'data' / 'portfolio_snapshot.json'
 OUTPUT_DIR = Path(os.getenv('OUTPUT_DIR', str(PROJECT_ROOT / 'output')))
 
+# Stocks to exclude from daily report (held for eventual sale)
+EXCLUDED_SYMBOLS = {'F83.SI', 'B58.SI'}
+
+# Benchmark for comparison
+BENCHMARK_SYMBOL = 'SPY'
+
 _CCY_SYMBOL: Dict[str, str] = {
     'USD': '$', 'SGD': 'S$', 'EUR': '€', 'GBP': '£',
     'TWD': 'NT$', 'KRW': '₩', 'HKD': 'HK$',
@@ -89,6 +95,9 @@ def load_holdings(path: str) -> List[Dict]:
                 'account':       row.get('Account', '').strip(),
                 'broker':        row.get('Broker', '').strip(),
                 'contract_date': cd if cd.upper() not in ('NA', '') else None,
+                'sector':        row.get('Sector', '').strip() or 'Other',
+                'asset_class':   row.get('AssetClass', '').strip() or 'Stock',
+                'geography':     row.get('Geography', '').strip() or 'Other',
             })
     return rows
 
@@ -189,6 +198,77 @@ def update_snapshot(snap: Dict, total_value: float) -> Dict:
 
 
 # ---------------------------------------------------------------------------
+# Portfolio allocation & benchmark
+# ---------------------------------------------------------------------------
+
+def calculate_allocation(holdings_data: List[Dict]) -> Dict[str, Dict[str, float]]:
+    """Calculate portfolio allocation by sector and geography (excluding held-for-sale positions)."""
+    # Exclude held-for-sale symbols
+    active_holdings = [h for h in holdings_data if h['symbol'] not in EXCLUDED_SYMBOLS]
+    total_value = sum(h['value_base'] for h in active_holdings)
+    if total_value == 0:
+        return {'sector': {}, 'geography': {}, 'asset_class': {}}
+
+    sectors = {}
+    geographies = {}
+    asset_classes = {}
+
+    for h in active_holdings:
+        weight = h['value_base'] / total_value
+
+        sector = h.get('sector', 'Other')
+        sectors[sector] = sectors.get(sector, 0) + weight
+
+        geo = h.get('geography', 'Other')
+        geographies[geo] = geographies.get(geo, 0) + weight
+
+        ac = h.get('asset_class', 'Stock')
+        asset_classes[ac] = asset_classes.get(ac, 0) + weight
+
+    return {
+        'sector': dict(sorted(sectors.items(), key=lambda x: x[1], reverse=True)),
+        'geography': dict(sorted(geographies.items(), key=lambda x: x[1], reverse=True)),
+        'asset_class': dict(sorted(asset_classes.items(), key=lambda x: x[1], reverse=True)),
+    }
+
+
+def calculate_rebalancing_guidance(holdings_data: List[Dict], targets_path: Optional[str] = None) -> List[str]:
+    """Generate rebalancing guidance comparing current to target allocation."""
+    if not targets_path or not Path(targets_path).exists():
+        return []
+
+    try:
+        target_weights = {}
+        with open(targets_path, newline='') as f:
+            reader = csv.DictReader(filter(lambda line: not line.startswith('#'), f))
+            for row in reader:
+                target_weights[row['Symbol']] = float(row['TargetWeight'])
+    except Exception as e:
+        logger.warning(f"Could not load targets: {e}")
+        return []
+
+    total_value = sum(h['value_base'] for h in holdings_data)
+    if total_value == 0:
+        return []
+
+    guidance = []
+    for h in holdings_data:
+        symbol = h['symbol']
+        if symbol not in target_weights:
+            continue
+
+        current_weight = h['value_base'] / total_value
+        target_weight = target_weights[symbol]
+        delta = current_weight - target_weight
+
+        if abs(delta) > 0.01:  # Only flag if > 1% difference
+            direction = "BUY" if delta < 0 else "SELL"
+            guidance.append(f"  {direction} {symbol}: {current_weight*100:.1f}% → {target_weight*100:.1f}%")
+
+    return guidance
+
+
+# ---------------------------------------------------------------------------
 # Report formatting (full Markdown)
 # ---------------------------------------------------------------------------
 
@@ -198,8 +278,10 @@ def format_report(
     total_cost: float,
     snap: Dict,
     macro: Optional[Dict],
-    news: Optional[Dict[str, List[str]]],
+    news: Optional[Dict[str, List[Dict[str, str]]]],
     report_date: str,
+    benchmark_data: Optional[Dict] = None,
+    targets_path: Optional[str] = None,
 ) -> str:
     base = config.BASE_CURRENCY
     gain_loss = total_value - total_cost
@@ -229,6 +311,9 @@ def format_report(
     ]
     movers = []
     for h in sorted(holdings_data, key=lambda x: x['value_base'], reverse=True):
+        # Skip excluded symbols from main report
+        if h['symbol'] in EXCLUDED_SYMBOLS:
+            continue
         pl_pct = h.get('pl_pct')
         cost_str = ccy(h['avg_cost_base']) if h.get('avg_cost_base') is not None else "—"
         current_str = ccy(h['current_base']) if h.get('current_base') is not None else "N/A"
@@ -241,9 +326,11 @@ def format_report(
             movers.append((h['symbol'], pl_pct))
     lines.append("")
 
-    if len(movers) > 1:
-        gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
-        losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
+    # Filter out excluded symbols from movers
+    movers_filtered = [m for m in movers if m[0] not in EXCLUDED_SYMBOLS]
+    if len(movers_filtered) > 1:
+        gainers = sorted([m for m in movers_filtered if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
+        losers = sorted([m for m in movers_filtered if m[1] < 0], key=lambda x: x[1])[:3]
         lines.append("## Movers\n")
         if gainers:
             lines.append("**Top gainers:** " + ", ".join(f"{s} {p:+.2f}%" for s, p in gainers))
@@ -251,13 +338,55 @@ def format_report(
             lines.append("**Top losers:** " + ", ".join(f"{s} {p:+.2f}%" for s, p in losers))
         lines.append("")
 
+    # Portfolio allocation breakdown
+    allocation = calculate_allocation(holdings_data)
+    if allocation['sector']:
+        lines.append("## Portfolio Allocation\n")
+        lines.append("### By Sector")
+        for sector, weight in allocation['sector'].items():
+            lines.append(f"- {sector}: {weight*100:.1f}%")
+        lines.append("")
+        lines.append("### By Geography")
+        for geo, weight in allocation['geography'].items():
+            lines.append(f"- {geo}: {weight*100:.1f}%")
+        lines.append("")
+        lines.append("### By Asset Class")
+        for ac, weight in allocation['asset_class'].items():
+            lines.append(f"- {ac}: {weight*100:.1f}%")
+        lines.append("")
+
+    # Rebalancing guidance
+    guidance = calculate_rebalancing_guidance(holdings_data, targets_path)
+    if guidance:
+        lines.append("## Rebalancing Guidance\n")
+        for item in guidance:
+            lines.append(item)
+        lines.append("")
+
+    # Benchmark comparison
+    if benchmark_data:
+        lines.append("## Benchmark Comparison\n")
+        lines.append(f"| Metric | Portfolio | {BENCHMARK_SYMBOL} |")
+        lines.append("|--------|-----------|-----------|")
+        if benchmark_data.get('portfolio_ytd') is not None and benchmark_data.get('benchmark_ytd') is not None:
+            lines.append(f"| YTD Return | {benchmark_data['portfolio_ytd']:+.2f}% | {benchmark_data['benchmark_ytd']:+.2f}% |")
+        lines.append("")
+
     if news and any(v for v in news.values()):
         lines.append("## News\n")
-        for symbol, headlines in news.items():
-            if headlines:
+        for symbol, articles in sorted(news.items()):
+            # Skip excluded symbols
+            if symbol in EXCLUDED_SYMBOLS:
+                continue
+            if articles:
                 lines.append(f"**{symbol}**")
-                for headline in headlines:
-                    lines.append(f"- {headline}")
+                for article in articles:
+                    title = article.get('title', '')
+                    link = article.get('link', '')
+                    if link:
+                        lines.append(f"- [{title}]({link})")
+                    else:
+                        lines.append(f"- {title}")
         lines.append("")
 
     if macro:
@@ -291,7 +420,7 @@ def format_telegram(
     total_cost: float,
     snap: Dict,
     macro: Optional[Dict],
-    news: Optional[Dict[str, List[str]]],
+    news: Optional[Dict[str, List[Dict[str, str]]]],
     report_date: str,
     report_filename: str,
 ) -> str:
@@ -310,7 +439,7 @@ def format_telegram(
         "",
     ]
 
-    movers = [(h['symbol'], h['pl_pct']) for h in holdings_data if h.get('pl_pct') is not None]
+    movers = [(h['symbol'], h['pl_pct']) for h in holdings_data if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS]
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
@@ -333,16 +462,37 @@ def format_telegram(
 
     if news:
         news_lines = []
-        for symbol, headlines in list(news.items())[:5]:
-            for h in headlines[:2]:
-                news_lines.append(f"• *{symbol}*: {h}")
+        # Top US/tech symbols always included, Singapore news condensed to top 3
+        priority_symbols = {'AMZN', 'AAPL', 'GOOG', 'D05.SI', 'BN4.SI', 'ES3.SI'}
+        included_symbols = set()
+
+        for symbol in priority_symbols:
+            if symbol in news and news[symbol]:
+                for article in news[symbol][:1]:  # 1 headline per priority symbol
+                    title = article.get('title', '')[:80]  # Truncate long titles
+                    news_lines.append(f"• *{symbol}*: {title}")
+                    included_symbols.add(symbol)
+
+        # Add other symbols if space allows
+        for symbol, articles in news.items():
+            if symbol not in included_symbols and articles:
+                title = articles[0].get('title', '')[:80]
+                news_lines.append(f"• *{symbol}*: {title}")
+
         if news_lines:
             lines.append("📰 *News*")
-            lines.extend(news_lines)
+            lines.extend(news_lines[:8])  # Max 8 news items for Telegram
             lines.append("")
 
     lines.append(f"_{report_filename}_")
-    return "\n".join(lines)
+    msg = "\n".join(lines)
+
+    # Split into multiple messages if over 4000 chars (Telegram limit)
+    if len(msg) > 4000:
+        # Return as-is; caller can handle splitting if needed
+        logger.warning(f"Telegram message exceeds 4000 chars ({len(msg)})")
+
+    return msg
 
 
 # ---------------------------------------------------------------------------
@@ -414,9 +564,23 @@ def _run(args) -> str:
         print("Fetching news headlines...")
         news = NewsFetcher(max_per_ticker=3).fetch_many([h['symbol'] for h in holdings])
 
+    # Fetch benchmark data (SPY for comparison)
+    benchmark_data = None
+    try:
+        print(f"Fetching {BENCHMARK_SYMBOL} benchmark data...")
+        spy_result = fetch_price(BENCHMARK_SYMBOL, yf, stooq)
+        if spy_result.get('price'):
+            benchmark_data = {'price': spy_result['price']}
+    except Exception as e:
+        logger.warning(f"Could not fetch benchmark: {e}")
+
+    # Load target allocation
+    targets_path = PROJECT_ROOT / 'data' / 'targets.csv'
+
     report_date = date.today().isoformat()
     report = format_report(
-        holdings_data, total_value, total_cost, snap, macro, news, report_date
+        holdings_data, total_value, total_cost, snap, macro, news, report_date,
+        benchmark_data=benchmark_data, targets_path=str(targets_path) if targets_path.exists() else None
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)

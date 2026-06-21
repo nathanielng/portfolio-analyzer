@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AWS Spend — 2026-06-13</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+  h1 { font-size: 1.25rem; font-weight: 600; color: #94a3b8; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 0.25rem; }
+  .subtitle { color: #475569; font-size: 0.85rem; margin-bottom: 2rem; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; max-width: 900px; }
+  @media (max-width: 600px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: #1e2130; border: 1px solid #2d3348; border-radius: 12px; padding: 1.5rem; }
+  .card-title { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 1rem; }
+  .card.wide { grid-column: 1 / -1; }
+
+  /* Summary totals */
+  .totals { display: flex; gap: 2rem; flex-wrap: wrap; }
+  .total-item { flex: 1; min-width: 140px; }
+  .total-label { font-size: 0.75rem; color: #64748b; margin-bottom: 0.25rem; }
+  .total-value { font-size: 1.75rem; font-weight: 700; }
+  .total-value.green { color: #10b981; }
+  .total-value.amber { color: #f59e0b; }
+  .total-value.muted { color: #475569; }
+  .credit-badge { display: inline-block; font-size: 0.7rem; background: #064e3b; color: #10b981; border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+
+  /* Bar chart */
+  .bar-list { display: flex; flex-direction: column; gap: 0.75rem; }
+  .bar-row { display: flex; align-items: center; gap: 0.75rem; }
+  .bar-rank { font-size: 0.7rem; color: #475569; width: 1.2rem; text-align: right; flex-shrink: 0; }
+  .bar-label { font-size: 0.8rem; color: #94a3b8; width: 200px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-region { font-size: 0.75rem; color: #475569; width: 110px; flex-shrink: 0; }
+  .bar-track { flex: 1; background: #2d3348; border-radius: 4px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #3b82f6, #6366f1); transition: width 0.6s ease; }
+  .bar-amount { font-size: 0.8rem; font-weight: 600; color: #e2e8f0; width: 3.5rem; text-align: right; flex-shrink: 0; }
+
+  /* MTD donut */
+  .mtd-inner { display: flex; align-items: center; gap: 2rem; }
+  .donut-wrap { position: relative; width: 100px; height: 100px; flex-shrink: 0; }
+  svg.donut { transform: rotate(-90deg); }
+  .donut-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 0.65rem; color: #64748b; text-align: center; }
+  .mtd-stats { display: flex; flex-direction: column; gap: 0.75rem; }
+  .stat-row { display: flex; flex-direction: column; }
+  .stat-label { font-size: 0.7rem; color: #64748b; }
+  .stat-value { font-size: 1rem; font-weight: 700; color: #e2e8f0; }
+  .stat-value.credit { color: #10b981; }
+
+  /* Credits table */
+  .credit-list { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.25rem; }
+  .credit-row { display: flex; align-items: center; gap: 0.75rem; }
+  .credit-svc { font-size: 0.8rem; color: #94a3b8; flex: 1; }
+  .credit-amt { font-size: 0.8rem; font-weight: 600; color: #10b981; width: 4rem; text-align: right; flex-shrink: 0; }
+  .credit-track { width: 80px; background: #2d3348; border-radius: 4px; height: 6px; overflow: hidden; flex-shrink: 0; }
+  .credit-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, #10b981, #059669); }
+
+  /* Credits grants table */
+  .credits-disclaimer { font-size: 0.7rem; color: #475569; margin-bottom: 1rem; font-style: italic; }
+  .credits-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .credits-table th { text-align: left; color: #475569; font-weight: 600; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 0.75rem 0.5rem 0; border-bottom: 1px solid #2d3348; }
+  .credits-table th.right, .credits-table td.right { text-align: right; }
+  .credits-table td { padding: 0.6rem 0.75rem 0.6rem 0; color: #94a3b8; border-bottom: 1px solid #1a1f2e; }
+  .credits-table td.name { color: #e2e8f0; }
+  .credits-table td.green { color: #10b981; font-weight: 600; }
+  .credits-table td.amber { color: #f59e0b; font-weight: 600; }
+  .credits-table .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.7rem; background: #064e3b; color: #10b981; border-radius: 4px; padding: 1px 6px; }
+  .credits-summary { display: flex; gap: 2rem; margin-bottom: 1.25rem; flex-wrap: wrap; }
+  .credits-summary-item { display: flex; flex-direction: column; gap: 0.2rem; }
+  .credits-summary-item .lbl { font-size: 0.7rem; color: #64748b; }
+  .credits-summary-item .val { font-size: 1.4rem; font-weight: 700; }
+
+  footer { margin-top: 2rem; font-size: 0.7rem; color: #334155; max-width: 900px; }
+</style>
+</head>
+<body>
+
+<h1>AWS Spend Report</h1>
+<p class="subtitle">Account 856952634940 &nbsp;·&nbsp; ap-southeast-1 &nbsp;·&nbsp; Generated 2026-06-14</p>
+
+<div class="grid">
+
+  <!-- Yesterday summary -->
+  <div class="card">
+    <div class="card-title">Yesterday &nbsp;·&nbsp; 2026-06-13</div>
+    <div class="totals">
+      <div class="total-item">
+        <div class="total-label">Gross spend</div>
+        <div class="total-value amber">$0.17</div>
+      </div>
+      <div class="total-item">
+        <div class="total-label">After credits</div>
+        <div class="total-value green">$0.00 <span class="credit-badge">fully covered</span></div>
+      </div>
+      <div class="total-item">
+        <div class="total-label">Credits applied</div>
+        <div class="total-value muted">−$0.17</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MTD summary -->
+  <div class="card">
+    <div class="card-title">Month to date &nbsp;·&nbsp; Jun 1 → Jun 13</div>
+    <div class="mtd-inner">
+      <div class="donut-wrap">
+        <!-- Full circle = gross spend, inner fill = credits covering it (100%) -->
+        <svg class="donut" width="100" height="100" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r="38" fill="none" stroke="#2d3348" stroke-width="12"/>
+          <!-- gross arc (full) -->
+          <circle cx="50" cy="50" r="38" fill="none" stroke="#f59e0b" stroke-width="12"
+                  stroke-dasharray="238.76 238.76" stroke-linecap="round"/>
+          <!-- credits arc (100% covered) -->
+          <circle cx="50" cy="50" r="38" fill="none" stroke="#10b981" stroke-width="12"
+                  stroke-dasharray="238.76 0" stroke-linecap="round"/>
+        </svg>
+        <div class="donut-center">100%<br>covered</div>
+      </div>
+      <div class="mtd-stats">
+        <div class="stat-row">
+          <span class="stat-label">Gross spend</span>
+          <span class="stat-value">$4.61</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Credits applied</span>
+          <span class="stat-value credit">−$4.61</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Net cost</span>
+          <span class="stat-value">$0.00</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top services bar chart -->
+  <div class="card wide">
+    <div class="card-title">Yesterday — Top services (excl. credits) <span style="font-weight:400;color:#334155">· scale: $0.10 max</span></div>
+    <div class="bar-list">
+      <div class="bar-row">
+        <span class="bar-rank">1</span>
+        <span class="bar-label">AWS Secrets Manager</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+        <span class="bar-amount">$0.10</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">2</span>
+        <span class="bar-label">AWS Key Management Service</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:30%"></div></div>
+        <span class="bar-amount">$0.03</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">3</span>
+        <span class="bar-label">EC2 - Other</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:26%"></div></div>
+        <span class="bar-amount">$0.03</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- MTD top services bar chart -->
+  <div class="card wide">
+    <div class="card-title">Month to date (Jun 1 → Jun 13) — Top services (excl. credits) <span style="font-weight:400;color:#334155">· scale: $1.39 max</span></div>
+    <div class="bar-list">
+      <div class="bar-row">
+        <span class="bar-rank">1</span>
+        <span class="bar-label">AWS Secrets Manager</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
+        <span class="bar-amount">$1.39</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">2</span>
+        <span class="bar-label">Amazon EC2 - Compute</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:64%"></div></div>
+        <span class="bar-amount">$0.89</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">3</span>
+        <span class="bar-label">Amazon VPC</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:61%"></div></div>
+        <span class="bar-amount">$0.84</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">4</span>
+        <span class="bar-label">Amazon Route 53</span>
+        <span class="bar-region">global</span>
+        <div class="bar-track"><div class="bar-fill" style="width:36%"></div></div>
+        <span class="bar-amount">$0.50</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">5</span>
+        <span class="bar-label">AWS Key Management Service</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:31%"></div></div>
+        <span class="bar-amount">$0.43</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">6</span>
+        <span class="bar-label">EC2 - Other</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:30%"></div></div>
+        <span class="bar-amount">$0.41</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">7</span>
+        <span class="bar-label">Amazon S3</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:5%"></div></div>
+        <span class="bar-amount">$0.07</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">8</span>
+        <span class="bar-label">AWS Cost Explorer</span>
+        <span class="bar-region">us-east-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:3%"></div></div>
+        <span class="bar-amount">$0.04</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">9</span>
+        <span class="bar-label">Amazon ECR</span>
+        <span class="bar-region">ap-southeast-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:1%"></div></div>
+        <span class="bar-amount">$0.01</span>
+      </div>
+      <div class="bar-row">
+        <span class="bar-rank">10</span>
+        <span class="bar-label">Amazon S3</span>
+        <span class="bar-region">us-east-1</span>
+        <div class="bar-track"><div class="bar-fill" style="width:1%"></div></div>
+        <span class="bar-amount">$0.01</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Credit grants -->
+  <div class="card wide">
+    <div class="card-title">Active credit grants</div>
+    <p class="credits-disclaimer">⚠ Snapshot from AWS Billing console on 14 Jun 2026 — amounts may have changed since.</p>
+    <div class="credits-summary">
+      <div class="credits-summary-item">
+        <span class="lbl">Total remaining</span>
+        <span class="val" style="color:#10b981">$97.69</span>
+      </div>
+      <div class="credits-summary-item">
+        <span class="lbl">Total used</span>
+        <span class="val" style="color:#f59e0b">$2.31</span>
+      </div>
+      <div class="credits-summary-item">
+        <span class="lbl">Total issued</span>
+        <span class="val">$100.00</span>
+      </div>
+      <div class="credits-summary-item">
+        <span class="lbl">Expiry</span>
+        <span class="val" style="font-size:1rem;padding-top:0.3rem;color:#94a3b8">31 Dec 2026</span>
+      </div>
+    </div>
+    <table class="credits-table">
+      <thead>
+        <tr>
+          <th>Credit ID</th>
+          <th>Name</th>
+          <th>Issued</th>
+          <th>Start date</th>
+          <th>Expiry</th>
+          <th>Status</th>
+          <th class="right">Used</th>
+          <th class="right">Remaining</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>10049961464</td>
+          <td class="name">APJ virtual events</td>
+          <td>$25.00</td>
+          <td>01 Apr 2025</td>
+          <td>31 Dec 2026</td>
+          <td><span class="badge">✓ Active</span></td>
+          <td class="right amber">$2.31</td>
+          <td class="right green">$22.69</td>
+        </tr>
+        <tr>
+          <td>10051849860</td>
+          <td class="name">APJ Marketing Events</td>
+          <td>$25.00</td>
+          <td>01 Aug 2025</td>
+          <td>31 Dec 2026</td>
+          <td><span class="badge">✓ Active</span></td>
+          <td class="right amber">$0.00</td>
+          <td class="right green">$25.00</td>
+        </tr>
+        <tr>
+          <td>10056402357</td>
+          <td class="name">Amazon-Braket-Promotion-at-SCA26</td>
+          <td>$50.00</td>
+          <td>01 Feb 2026</td>
+          <td>31 Dec 2026</td>
+          <td><span class="badge">✓ Active</span></td>
+          <td class="right amber">$0.00</td>
+          <td class="right green">$50.00</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<footer>Data source: AWS Cost Explorer · UnblendedCost · ap-southeast-1 + us-east-1</footer>
+
+</body>
+</html>
