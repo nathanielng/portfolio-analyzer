@@ -602,37 +602,44 @@ def format_telegram(
     lines.append(" | ".join(returns_parts))
     lines.append("")
 
-    # Deduplicate movers by symbol: show 1Y return for positions held >= 1Y, "—" otherwise
+    # Deduplicate movers by symbol: 1Y return for positions >= 1Y, YTD for newer
     from datetime import timedelta
     symbol_returns = {}
+    symbol_timeframe = {}  # Track which timeframe for each symbol
     today = date.today()
     date_1y_ago = (today - timedelta(days=365)).isoformat()
+    year_start = f"{today.year}-01-01"
 
     for h in holdings_data:
         if h['symbol'] in EXCLUDED_SYMBOLS:
             continue
 
         contract_date = h.get('contract_date')
-
-        # For positions held >= 1Y, show 1Y return (approximated as cost→current)
-        # For positions held < 1Y, show "—"
-        if contract_date and contract_date > date_1y_ago:
-            # Position less than 1Y old; skip
+        pl_pct = h.get('pl_pct')
+        if pl_pct is None:
             continue
 
-        pl_pct = h.get('pl_pct')
-        if pl_pct is not None:
-            if h['symbol'] not in symbol_returns:
+        # Determine timeframe: 1Y if held >= 1Y, otherwise YTD
+        if contract_date and contract_date > date_1y_ago:
+            timeframe = 'YTD'  # Position < 1Y old
+        else:
+            timeframe = '1Y'   # Position >= 1Y old
+
+        # Aggregate by symbol (keep best return if multiple lots)
+        if h['symbol'] not in symbol_returns:
+            symbol_returns[h['symbol']] = pl_pct
+            symbol_timeframe[h['symbol']] = timeframe
+        else:
+            if pl_pct > symbol_returns[h['symbol']]:
                 symbol_returns[h['symbol']] = pl_pct
-            else:
-                # Keep best return if multiple lots
-                symbol_returns[h['symbol']] = max(symbol_returns[h['symbol']], pl_pct)
+                symbol_timeframe[h['symbol']] = timeframe
 
     movers = list(symbol_returns.items())
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
-        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers) + " (1Y)")
+        labels = [f"{s} {p:+.1f}%" for s, p in gainers]
+        lines.append("▲ " + "  ".join(labels) + " (1Y)")
 
     # Add benchmark comparison between gainers and losers
     if benchmark_data:
@@ -646,7 +653,9 @@ def format_telegram(
             lines.append("📊 " + " | ".join(benchmark_parts))
 
     if losers:
-        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers) + " (1Y)")
+        labels = [f"{s} {p:+.1f}%" for s, p in losers]
+        loser_timeframe = "YTD" if all(symbol_timeframe.get(s) == 'YTD' for s, _ in losers) else "1Y"
+        lines.append("▼ " + "  ".join(labels) + f" ({loser_timeframe})")
     if gainers or losers:
         lines.append("")
 
