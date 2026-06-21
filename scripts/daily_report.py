@@ -183,18 +183,90 @@ def save_snapshot(snap: Dict) -> None:
 
 
 def update_snapshot(snap: Dict, total_value: float) -> Dict:
-    today = date.today().isoformat()
-    year = str(date.today().year)
+    from datetime import timedelta
+    today = date.today()
+    today_str = today.isoformat()
+    year = str(today.year)
+
     if snap.get('ytd_year') != year:
         snap['ytd_baseline'] = total_value
         snap['ytd_year'] = year
     if total_value > snap.get('peak', 0):
         snap['peak'] = total_value
-        snap['peak_date'] = today
+        snap['peak_date'] = today_str
+
     snap['last_value'] = total_value
-    snap['last_date'] = today
+    snap['last_date'] = today_str
     snap['base_currency'] = config.BASE_CURRENCY
+
+    # Track historical values for return calculations
+    if 'value_history' not in snap:
+        snap['value_history'] = {}
+    snap['value_history'][today_str] = total_value
+
+    # Prune old entries (keep last 400 days for 1Y calculation)
+    cutoff = (today - timedelta(days=400)).isoformat()
+    snap['value_history'] = {k: v for k, v in snap['value_history'].items() if k >= cutoff}
+
     return snap
+
+
+def calculate_returns(snap: Dict) -> Dict:
+    """Calculate 1Y, 3M, YTD returns from snapshot history."""
+    from datetime import timedelta
+
+    today = date.today()
+    current_value = snap.get('last_value', 0)
+    if current_value == 0:
+        return {'return_1y': None, 'return_3m': None, 'return_ytd': None}
+
+    returns = {}
+
+    # YTD return
+    ytd_baseline = snap.get('ytd_baseline')
+    if ytd_baseline:
+        returns['return_ytd'] = ((current_value - ytd_baseline) / ytd_baseline * 100) if ytd_baseline else None
+    else:
+        returns['return_ytd'] = None
+
+    # 1Y and 3M returns from history
+    history = snap.get('value_history', {})
+
+    # 1Y return (365 days ago)
+    date_1y_ago = (today - timedelta(days=365)).isoformat()
+    if date_1y_ago in history:
+        value_1y_ago = history[date_1y_ago]
+        returns['return_1y'] = ((current_value - value_1y_ago) / value_1y_ago * 100)
+    else:
+        # Find closest date before 1Y ago
+        closest_date = None
+        for hist_date in sorted(history.keys()):
+            if hist_date <= date_1y_ago:
+                closest_date = hist_date
+        if closest_date:
+            value_1y_ago = history[closest_date]
+            returns['return_1y'] = ((current_value - value_1y_ago) / value_1y_ago * 100)
+        else:
+            returns['return_1y'] = None
+
+    # 3M return (90 days ago)
+    date_3m_ago = (today - timedelta(days=90)).isoformat()
+    if date_3m_ago in history:
+        value_3m_ago = history[date_3m_ago]
+        returns['return_3m'] = ((current_value - value_3m_ago) / value_3m_ago * 100)
+    else:
+        # Find closest date before 3M ago
+        closest_date = None
+        for hist_date in sorted(history.keys()):
+            if hist_date <= date_3m_ago:
+                closest_date = hist_date
+        if closest_date:
+            value_3m_ago = history[closest_date]
+            returns['return_3m'] = ((current_value - value_3m_ago) / value_3m_ago * 100)
+        else:
+            returns['return_3m'] = None
+
+    return returns
 
 
 # ---------------------------------------------------------------------------
@@ -292,17 +364,29 @@ def format_report(
     ytd_pct = ((total_value - ytd_base) / ytd_base * 100) if ytd_base else 0
 
     lines = [f"# Portfolio Daily Report — {report_date}\n"]
+
+    # Calculate period returns
+    returns = calculate_returns(snap)
+    return_1y = returns.get('return_1y')
+    return_3m = returns.get('return_3m')
+
     lines += [
         "## Portfolio Summary\n",
         "| Metric | Value |",
         "|--------|-------|",
         f"| Total Value ({base}) | {ccy(total_value)} |",
         f"| Total Cost Basis | {ccy(total_cost)} |",
-        f"| Unrealized P&L | {ccy(gain_loss)} ({gain_pct:+.2f}%) |",
-        f"| YTD Return | {ytd_pct:+.2f}% |",
-        f"| Max Drawdown from Peak | {drawdown_pct:.2f}% (peak {ccy(peak)}) |",
-        "",
+        f"| All-Time P&L | {ccy(gain_loss)} ({gain_pct:+.2f}%) |",
     ]
+
+    # Add return metrics
+    if return_1y is not None:
+        lines.append(f"| 1-Year Return | {return_1y:+.2f}% |")
+    if return_3m is not None:
+        lines.append(f"| 3-Month Return | {return_3m:+.2f}% |")
+    lines.append(f"| YTD Return | {ytd_pct:+.2f}% |")
+    lines.append(f"| Max Drawdown from Peak | {drawdown_pct:.2f}% (peak {ccy(peak)}) |")
+    lines += [""]
 
     lines += [
         "## Holdings\n",
@@ -431,13 +515,27 @@ def format_telegram(
     ytd_base = snap.get('ytd_baseline', total_value)
     ytd_pct = ((total_value - ytd_base) / ytd_base * 100) if ytd_base else 0
 
+    returns = calculate_returns(snap)
+    return_1y = returns.get('return_1y')
+    return_3m = returns.get('return_3m')
+
     lines = [
         f"📊 *Portfolio — {report_date}*",
         "─" * 28,
-        f"{ccy(total_value)}  |  P&L {gain_pct:+.1f}%",
-        f"YTD {ytd_pct:+.2f}%  |  Drawdown {drawdown_pct:.2f}%",
-        "",
+        f"{ccy(total_value)}  |  All-time P&L {gain_pct:+.1f}%",
     ]
+
+    # Add returns line: 1Y | 3M | YTD
+    returns_parts = []
+    if return_1y is not None:
+        returns_parts.append(f"1Y {return_1y:+.1f}%")
+    if return_3m is not None:
+        returns_parts.append(f"3M {return_3m:+.1f}%")
+    returns_parts.append(f"YTD {ytd_pct:+.1f}%")
+
+    lines.append(" | ".join(returns_parts))
+    lines.append(f"Drawdown {drawdown_pct:.1f}%")
+    lines.append("")
 
     # Deduplicate movers by symbol (aggregate multiple lots)
     symbol_returns = {}
