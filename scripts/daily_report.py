@@ -506,7 +506,7 @@ def format_telegram(
     macro: Optional[Dict],
     news: Optional[Dict[str, List[Dict[str, str]]]],
     report_date: str,
-    report_filename: str,
+    benchmark_data: Optional[Dict] = None,
 ) -> str:
     gain_loss = total_value - total_cost
     gain_pct = (gain_loss / total_cost * 100) if total_cost else 0
@@ -552,6 +552,17 @@ def format_telegram(
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
         lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers))
+
+    # Add benchmark comparison between gainers and losers
+    if benchmark_data:
+        benchmark_parts = []
+        for symbol in ['SPY', 'QQQ']:
+            if symbol in benchmark_data:
+                # For now, just show the symbol as a placeholder; YTD would require historical data
+                benchmark_parts.append(f"{symbol} —")
+        if benchmark_parts:
+            lines.append("📊 " + " | ".join(benchmark_parts))
+
     if losers:
         lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers))
     if gainers or losers:
@@ -601,7 +612,6 @@ def format_telegram(
             lines.extend(news_lines[:6])  # Max 6 news items for Telegram char limit
             lines.append("")
 
-    lines.append(f"_{report_filename}_")
     msg = "\n".join(lines)
 
     # Split into multiple messages if over 4000 chars (Telegram limit)
@@ -681,15 +691,16 @@ def _run(args) -> str:
         print("Fetching news headlines...")
         news = NewsFetcher(max_per_ticker=3).fetch_many([h['symbol'] for h in holdings])
 
-    # Fetch benchmark data (SPY for comparison)
-    benchmark_data = None
-    try:
-        print(f"Fetching {BENCHMARK_SYMBOL} benchmark data...")
-        spy_result = fetch_price(BENCHMARK_SYMBOL, yf, stooq)
-        if spy_result.get('price'):
-            benchmark_data = {'price': spy_result['price']}
-    except Exception as e:
-        logger.warning(f"Could not fetch benchmark: {e}")
+    # Fetch benchmark data (SPY and QQQ for comparison)
+    benchmark_data = {}
+    for benchmark_symbol in ['SPY', 'QQQ']:
+        try:
+            print(f"Fetching {benchmark_symbol} benchmark data...")
+            result = fetch_price(benchmark_symbol, yf, stooq)
+            if result.get('price'):
+                benchmark_data[benchmark_symbol] = {'price': result['price']}
+        except Exception as e:
+            logger.warning(f"Could not fetch {benchmark_symbol}: {e}")
 
     # Load target allocation
     targets_path = PROJECT_ROOT / 'data' / 'targets.csv'
@@ -697,7 +708,7 @@ def _run(args) -> str:
     report_date = date.today().isoformat()
     report = format_report(
         holdings_data, total_value, total_cost, snap, macro, news, report_date,
-        benchmark_data=benchmark_data, targets_path=str(targets_path) if targets_path.exists() else None
+        benchmark_data=benchmark_data if benchmark_data else None, targets_path=str(targets_path) if targets_path.exists() else None
     )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -714,7 +725,7 @@ def _run(args) -> str:
             print("Sending Telegram summary...")
             msg = format_telegram(
                 holdings_data, total_value, total_cost, snap, macro, news,
-                report_date, out_path.name,
+                report_date, benchmark_data
             )
             tg.send(msg)
         else:
