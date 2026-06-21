@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 
@@ -279,10 +280,24 @@ def main():
             'metrics': metrics_by_preset,
         })
 
+    # Add outperformance flags (underperforming in 2+ of 3 periods)
+    for symbol_data in watchlist_metrics:
+        underperform_count = 0
+        for period in ['1y', '2y', '5y']:
+            metrics = symbol_data['metrics'][period]
+            if metrics and metrics.get('return', 0) < metrics.get('benchmark_return', 0):
+                underperform_count += 1
+        symbol_data['underperforming'] = underperform_count >= 2
+
+    # Calculate correlation matrix (1Y returns)
+    logger.info("Calculating correlation matrix...")
+    correlation_matrix = calculate_correlation_matrix(all_data, watchlist_metrics)
+
     # Generate output
     output = {
         'generated_at': datetime.now().isoformat(),
         'watchlist': watchlist_metrics,
+        'correlation_matrix': correlation_matrix,
     }
 
     # Write JSON
@@ -291,6 +306,53 @@ def main():
 
     logger.info(f"Report written to {OUTPUT_PATH}")
     logger.info("Done")
+
+
+def calculate_correlation_matrix(all_data: Dict, watchlist_metrics: List[Dict]) -> Dict:
+    """
+    Calculate correlation matrix between all symbols using 1Y daily returns.
+
+    Returns: {symbol: {symbol: correlation}}
+    """
+    import numpy as np
+
+    # Extract symbols and their 1Y data
+    symbols = [entry['symbol'] for entry in watchlist_metrics]
+    returns_dict = {}
+
+    for symbol in symbols:
+        symbol_df = all_data.get(symbol, {}).get('1y', pd.DataFrame())
+        if symbol_df.empty or len(symbol_df) < 2:
+            continue
+
+        prices = symbol_df.values.flatten()
+        daily_returns = pd.Series(prices).pct_change().dropna()
+        returns_dict[symbol] = daily_returns.values
+
+    if not returns_dict:
+        return {}
+
+    # Find common length for all series
+    min_len = min(len(v) for v in returns_dict.values())
+
+    # Build correlation matrix
+    matrix = {}
+    for sym1 in returns_dict.keys():
+        matrix[sym1] = {}
+        for sym2 in returns_dict.keys():
+            if sym1 == sym2:
+                matrix[sym1][sym2] = 1.0
+            else:
+                try:
+                    corr = float(np.corrcoef(
+                        returns_dict[sym1][-min_len:],
+                        returns_dict[sym2][-min_len:]
+                    )[0, 1])
+                    matrix[sym1][sym2] = round(corr, 3)
+                except:
+                    matrix[sym1][sym2] = None
+
+    return matrix
 
 
 if __name__ == '__main__':
