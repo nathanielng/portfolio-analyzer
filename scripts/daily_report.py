@@ -693,14 +693,43 @@ def _run(args) -> str:
 
     # Fetch benchmark data (SPY and QQQ for comparison)
     benchmark_data = {}
+    benchmark_history_path = PROJECT_ROOT / 'data' / 'benchmark_history.json'
+
+    # Load existing benchmark history
+    benchmark_history = {}
+    if benchmark_history_path.exists():
+        try:
+            benchmark_history = json.loads(benchmark_history_path.read_text())
+        except Exception as e:
+            logger.warning(f"Could not load benchmark history: {e}")
+            benchmark_history = {'meta': {}, 'SPY': {}, 'QQQ': {}}
+
+    # Fetch current prices and store in history
+    today_str = date.today().isoformat()
     for benchmark_symbol in ['SPY', 'QQQ']:
         try:
             print(f"Fetching {benchmark_symbol} benchmark data...")
             result = fetch_price(benchmark_symbol, yf, stooq)
             if result.get('price'):
-                benchmark_data[benchmark_symbol] = {'price': result['price']}
+                current_price = result['price']
+                benchmark_data[benchmark_symbol] = {'price': current_price}
+
+                # Update history
+                if benchmark_symbol not in benchmark_history:
+                    benchmark_history[benchmark_symbol] = {}
+                benchmark_history[benchmark_symbol][today_str] = current_price
         except Exception as e:
             logger.warning(f"Could not fetch {benchmark_symbol}: {e}")
+
+    # Save benchmark history
+    benchmark_history['meta'] = {
+        'updated': today_str,
+        'benchmarks': ['SPY', 'QQQ']
+    }
+    try:
+        benchmark_history_path.write_text(json.dumps(benchmark_history, indent=2))
+    except Exception as e:
+        logger.warning(f"Could not save benchmark history: {e}")
 
     # Load target allocation
     targets_path = PROJECT_ROOT / 'data' / 'targets.csv'
