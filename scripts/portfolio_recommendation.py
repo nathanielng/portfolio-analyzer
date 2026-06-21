@@ -414,7 +414,7 @@ def generate_html_report(
     # Mathematical Formulas
     html_parts.append("""
         <div class="section">
-            <h2>3. Mathematical Framework</h2>
+            <h2>6. Mathematical Framework</h2>
 
             <h3>Portfolio Return</h3>
             <div class="formula">
@@ -459,10 +459,61 @@ def generate_html_report(
         </div>
 """)
 
+    # Concrete Allocations for $10k Portfolio
+    html_parts.append("""
+        <div class="section">
+            <h2>4. Concrete Allocations for $10,000 Portfolio</h2>
+            <p>How to deploy your capital in the two recommended strategies:</p>
+""")
+
+    portfolio_size = 10000
+
+    for portfolio_name in ['Maximum Sharpe Ratio', 'Sector Balanced']:
+        if portfolio_name not in portfolios:
+            continue
+
+        weights = portfolios[portfolio_name]
+        port_return = calculate_portfolio_return(weights, returns)
+        port_vol = calculate_portfolio_volatility(weights, correlation, volatility)
+        expected_gain = (port_return / 100) * portfolio_size
+
+        html_parts.append(f"""
+        <div style="margin-bottom: 30px; padding: 20px; background: #f8f9fa; border-radius: 8px;">
+            <h3>{portfolio_name}</h3>
+            <p style="color: #7f8c8d; margin-bottom: 15px;"><strong>Expected Return:</strong> {port_return:+.2f}% | <strong>Expected Gain (1Y):</strong> <span class="positive">${expected_gain:,.0f}</span></p>
+
+            <table style="width: 100%; margin-top: 15px;">
+                <tr><th>Stock</th><th>Weight</th><th>Allocation</th><th>Expected Return</th><th>Expected Gain</th></tr>
+""")
+
+        # Sort by weight
+        top_holdings = sorted(zip(symbols, weights, returns), key=lambda x: x[1], reverse=True)
+
+        for symbol, weight, ret in top_holdings:
+            if weight > 0.001:  # Show anything > 0.1%
+                dollar_amount = weight * portfolio_size
+                expected_stock_gain = (ret / 100) * dollar_amount
+                html_parts.append(f"""
+                <tr>
+                    <td><strong>{symbol}</strong></td>
+                    <td>{weight*100:.1f}%</td>
+                    <td>${dollar_amount:,.0f}</td>
+                    <td><span class='{'positive' if ret > 0 else 'negative'}'>{ret:+.1f}%</span></td>
+                    <td><span class='{'positive' if expected_stock_gain > 0 else 'negative'}'>${expected_stock_gain:+,.0f}</span></td>
+                </tr>
+""")
+
+        html_parts.append("""
+            </table>
+        </div>
+""")
+
+    html_parts.append("</div>")
+
     # Final Recommendation
     html_parts.append("""
         <div class="section">
-            <h2>4. Recommended Strategy</h2>
+            <h2>5. Recommended Strategy</h2>
             <div class="recommendation">
                 <h4>✓ Use Maximum Sharpe Ratio Portfolio</h4>
                 <p><strong>Why:</strong> This portfolio optimally balances risk and return by maximizing return per unit of risk. It's mathematically proven to be the most efficient allocation given your constraints.</p>
@@ -488,7 +539,7 @@ def generate_html_report(
         </div>
 
         <div class="section">
-            <h2>5. Risk Considerations</h2>
+            <h2>7. Risk Considerations</h2>
             <ul style="margin-left: 20px; line-height: 2;">
                 <li><strong>Sector Concentration:</strong> Tech/semiconductors represent majority. Consider adding non-tech exposure.</li>
                 <li><strong>Market Beta:</strong> All stocks are high-beta (move with market). Add bonds or defensive stocks for lower volatility.</li>
