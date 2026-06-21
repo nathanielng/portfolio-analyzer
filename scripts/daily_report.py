@@ -334,6 +334,55 @@ def calculate_position_return_1y(holdings_data: List[Dict], snapshot: Dict) -> D
     return returns_by_symbol
 
 
+def refresh_position_history(symbols: List[str]) -> Dict:
+    """Fetch 1Y stock performance for all symbols and update position_history.json."""
+    import yfinance as yf
+
+    position_history = {
+        "meta": {
+            "updated": date.today().isoformat(),
+            "note": "1Y stock performance for all holdings"
+        }
+    }
+
+    logger.info(f"Refreshing 1Y data for {len(symbols)} stocks...")
+    for symbol in symbols:
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period='1y', interval='1d')
+
+            if len(hist) < 2:
+                logger.warning(f"Insufficient data for {symbol}")
+                continue
+
+            price_1y_ago = float(hist.iloc[0]['Close'])
+            price_today = float(hist.iloc[-1]['Close'])
+            return_1y = ((price_today - price_1y_ago) / price_1y_ago * 100) if price_1y_ago else None
+
+            date_1y_ago = hist.index[0].date().isoformat()
+            date_today = hist.index[-1].date().isoformat()
+
+            position_history[symbol] = {
+                date_1y_ago: round(price_1y_ago, 2),
+                date_today: round(price_today, 2),
+                "return_1y": round(return_1y, 2) if return_1y else None
+            }
+            logger.debug(f"{symbol}: {return_1y:+.2f}%")
+
+        except Exception as e:
+            logger.warning(f"Could not fetch {symbol}: {e}")
+
+    # Save to file
+    try:
+        path = PROJECT_ROOT / 'data' / 'position_history.json'
+        path.write_text(json.dumps(position_history, indent=2))
+        logger.info(f"Saved 1Y data for {len(position_history)-1} symbols to {path}")
+    except Exception as e:
+        logger.warning(f"Could not save position_history.json: {e}")
+
+    return position_history
+
+
 # ---------------------------------------------------------------------------
 # Portfolio allocation & benchmark
 # ---------------------------------------------------------------------------
@@ -734,6 +783,10 @@ def _run(args) -> str:
     print(f"Loading holdings from: {holdings_path}")
     holdings = load_holdings(holdings_path)
     print(f"Found {len(holdings)} positions\n")
+
+    # Refresh 1Y stock performance data for all holdings
+    unique_symbols = sorted(set(h['symbol'] for h in holdings if h['symbol'] not in EXCLUDED_SYMBOLS))
+    refresh_position_history(unique_symbols)
 
     yf = YFinanceFetcher()
     stooq = StooqFetcher()
