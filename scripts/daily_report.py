@@ -602,21 +602,37 @@ def format_telegram(
     lines.append(" | ".join(returns_parts))
     lines.append("")
 
-    # Deduplicate movers by symbol (aggregate multiple lots, show all-time P&L)
+    # Deduplicate movers by symbol: show 1Y return for positions held >= 1Y, "—" otherwise
+    from datetime import timedelta
     symbol_returns = {}
+    today = date.today()
+    date_1y_ago = (today - timedelta(days=365)).isoformat()
+
     for h in holdings_data:
-        if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS:
+        if h['symbol'] in EXCLUDED_SYMBOLS:
+            continue
+
+        contract_date = h.get('contract_date')
+
+        # For positions held >= 1Y, show 1Y return (approximated as cost→current)
+        # For positions held < 1Y, show "—"
+        if contract_date and contract_date > date_1y_ago:
+            # Position less than 1Y old; skip
+            continue
+
+        pl_pct = h.get('pl_pct')
+        if pl_pct is not None:
             if h['symbol'] not in symbol_returns:
-                symbol_returns[h['symbol']] = h['pl_pct']
+                symbol_returns[h['symbol']] = pl_pct
             else:
-                # Keep the best return if multiple lots
-                symbol_returns[h['symbol']] = max(symbol_returns[h['symbol']], h['pl_pct'])
+                # Keep best return if multiple lots
+                symbol_returns[h['symbol']] = max(symbol_returns[h['symbol']], pl_pct)
 
     movers = list(symbol_returns.items())
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
-        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers) + " (All-Time)")
+        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers) + " (1Y)")
 
     # Add benchmark comparison between gainers and losers
     if benchmark_data:
@@ -630,7 +646,7 @@ def format_telegram(
             lines.append("📊 " + " | ".join(benchmark_parts))
 
     if losers:
-        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers) + " (All-Time)")
+        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers) + " (1Y)")
     if gainers or losers:
         lines.append("")
 
