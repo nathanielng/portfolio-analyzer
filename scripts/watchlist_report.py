@@ -89,14 +89,16 @@ def calculate_metrics(
     prices_df: pd.DataFrame,
     benchmark_df: pd.DataFrame,
     symbol: str,
+    benchmark_name: str = 'SPY',
 ) -> Dict:
     """
     Calculate all metrics for a symbol given price history and benchmark.
 
     Args:
         prices_df: Single-column DataFrame with Close prices
-        benchmark_df: SPY Close prices
+        benchmark_df: Benchmark Close prices (SPY, QQQ, IWM, or VTI)
         symbol: Symbol name (for logging)
+        benchmark_name: Name of benchmark ('SPY', 'QQQ', 'IWM', 'VTI')
 
     Returns:
         Dictionary of metrics and sparkline data
@@ -165,6 +167,7 @@ def calculate_metrics(
         sparkline_prices = [float(p) for p in prices_arr]
         sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index]
 
+        bench_key = f'benchmark_return_{benchmark_name.lower()}'
         return {
             'return': round(total_return, 2),
             'volatility': round(volatility, 2),
@@ -174,7 +177,7 @@ def calculate_metrics(
             'beta': round(beta, 2),
             'alpha': round(alpha * 100, 2),
             'information_ratio': round(info_ratio, 2),
-            'benchmark_return': round(benchmark_total_return, 2),
+            bench_key: round(benchmark_total_return, 2),
             'sparkline_prices': sparkline_prices,
             'sparkline_dates': sparkline_dates,
         }
@@ -239,19 +242,22 @@ def main():
                 logger.warning(f"Failed to fetch {symbol} for {preset_name}: {e}")
                 all_data[symbol][preset_name] = pd.DataFrame()
 
-    # Fetch SPY benchmark
-    logger.info("Fetching SPY benchmark data...")
-    spy_data = {}
-    for preset_name, (days, interval) in presets_with_dates.items():
-        try:
-            start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-            end_date = datetime.now().strftime('%Y-%m-%d')
-            df = fetcher.fetch(['SPY'], start_date, end_date, interval)
-            spy_data[preset_name] = df
-            logger.info(f"Fetched SPY for {preset_name}: {len(df)} rows")
-        except Exception as e:
-            logger.warning(f"Failed to fetch SPY for {preset_name}: {e}")
-            spy_data[preset_name] = pd.DataFrame()
+    # Fetch benchmark data (SPY, QQQ, IWM, VTI)
+    logger.info("Fetching benchmark data...")
+    benchmarks = ['SPY', 'QQQ', 'IWM', 'VTI']
+    benchmark_data = {b: {} for b in benchmarks}
+
+    for bench_symbol in benchmarks:
+        for preset_name, (days, interval) in presets_with_dates.items():
+            try:
+                start_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+                end_date = datetime.now().strftime('%Y-%m-%d')
+                df = fetcher.fetch([bench_symbol], start_date, end_date, interval)
+                benchmark_data[bench_symbol][preset_name] = df
+                logger.info(f"Fetched {bench_symbol} for {preset_name}: {len(df)} rows")
+            except Exception as e:
+                logger.warning(f"Failed to fetch {bench_symbol} for {preset_name}: {e}")
+                benchmark_data[bench_symbol][preset_name] = pd.DataFrame()
 
     # Calculate metrics for each symbol and preset
     logger.info("Calculating metrics...")
@@ -264,12 +270,21 @@ def main():
         metrics_by_preset = {}
         for preset_name in presets_with_dates.keys():
             symbol_df = all_data.get(symbol, {}).get(preset_name, pd.DataFrame())
-            spy_df = spy_data.get(preset_name, pd.DataFrame())
 
+            # Calculate metrics against SPY (primary benchmark)
+            spy_df = benchmark_data['SPY'].get(preset_name, pd.DataFrame())
             if not symbol_df.empty:
-                metrics = calculate_metrics(symbol_df, spy_df, symbol)
+                metrics = calculate_metrics(symbol_df, spy_df, symbol, 'SPY')
             else:
                 metrics = {}
+
+            # Add other benchmark returns (QQQ, IWM, VTI)
+            for bench in ['QQQ', 'IWM', 'VTI']:
+                bench_df = benchmark_data[bench].get(preset_name, pd.DataFrame())
+                if not symbol_df.empty and not bench_df.empty:
+                    bench_metrics = calculate_metrics(symbol_df, bench_df, symbol, bench)
+                    if bench_metrics:
+                        metrics.update(bench_metrics)
 
             metrics_by_preset[preset_name] = metrics
 
