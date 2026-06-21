@@ -439,7 +439,17 @@ def format_telegram(
         "",
     ]
 
-    movers = [(h['symbol'], h['pl_pct']) for h in holdings_data if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS]
+    # Deduplicate movers by symbol (aggregate multiple lots)
+    symbol_returns = {}
+    for h in holdings_data:
+        if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS:
+            if h['symbol'] not in symbol_returns:
+                symbol_returns[h['symbol']] = h['pl_pct']
+            else:
+                # Keep the best return if multiple lots
+                symbol_returns[h['symbol']] = max(symbol_returns[h['symbol']], h['pl_pct'])
+
+    movers = list(symbol_returns.items())
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
@@ -462,26 +472,35 @@ def format_telegram(
 
     if news:
         news_lines = []
-        # Top US/tech symbols always included, Singapore news condensed to top 3
+        # Top US/tech symbols always included, Singapore news condensed
         priority_symbols = {'AMZN', 'AAPL', 'GOOG', 'D05.SI', 'BN4.SI', 'ES3.SI'}
         included_symbols = set()
 
-        for symbol in priority_symbols:
-            if symbol in news and news[symbol]:
-                for article in news[symbol][:1]:  # 1 headline per priority symbol
-                    title = article.get('title', '')[:80]  # Truncate long titles
+        for symbol in sorted(priority_symbols):
+            if symbol in news and news[symbol] and symbol not in EXCLUDED_SYMBOLS:
+                article = news[symbol][0]
+                title = article.get('title', '')[:70]  # Truncate long titles
+                link = article.get('link', '')
+                if link:
+                    news_lines.append(f"• [{symbol}]({link}) {title}")
+                else:
                     news_lines.append(f"• *{symbol}*: {title}")
-                    included_symbols.add(symbol)
+                included_symbols.add(symbol)
 
-        # Add other symbols if space allows
-        for symbol, articles in news.items():
-            if symbol not in included_symbols and articles:
-                title = articles[0].get('title', '')[:80]
-                news_lines.append(f"• *{symbol}*: {title}")
+        # Add other symbols if space allows (but NOT excluded symbols)
+        for symbol, articles in sorted(news.items()):
+            if symbol not in included_symbols and symbol not in EXCLUDED_SYMBOLS and articles:
+                article = articles[0]
+                title = article.get('title', '')[:70]
+                link = article.get('link', '')
+                if link:
+                    news_lines.append(f"• [{symbol}]({link}) {title}")
+                else:
+                    news_lines.append(f"• *{symbol}*: {title}")
 
         if news_lines:
             lines.append("📰 *News*")
-            lines.extend(news_lines[:8])  # Max 8 news items for Telegram
+            lines.extend(news_lines[:6])  # Max 6 news items for Telegram char limit
             lines.append("")
 
     lines.append(f"_{report_filename}_")
