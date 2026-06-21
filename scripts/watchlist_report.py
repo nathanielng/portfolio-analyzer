@@ -160,9 +160,9 @@ def calculate_metrics(
         tracking_error = (price_returns - benchmark_returns_series).std() * (252 ** 0.5)
         info_ratio = float((excess_return * 252 / 100) / tracking_error) if tracking_error > 0 else 0
 
-        # Generate sparkline data (normalized prices for charting, last 50 points max)
-        sparkline_prices = [float(p) for p in prices_arr[-50:]]
-        sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index[-50:]]
+        # Generate sparkline data (all points for this timeframe, chronological order)
+        sparkline_prices = [float(p) for p in prices_arr]
+        sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index]
 
         return {
             'return': round(total_return, 2),
