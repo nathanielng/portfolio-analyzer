@@ -183,6 +183,10 @@ def calculate_metrics(
             bench_key: round(benchmark_total_return, 2),
         }
 
+        # Always include generic benchmark_return (defaults to SPY)
+        if benchmark_name == 'SPY':
+            result['benchmark_return'] = round(benchmark_total_return, 2)
+
         # Add sparkline data for all benchmarks
         if benchmark_name == 'SPY':
             result['sparkline_prices'] = sparkline_prices
