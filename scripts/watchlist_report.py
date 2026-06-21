@@ -166,10 +166,12 @@ def calculate_metrics(
         # Generate sparkline data (all points for this timeframe, chronological order)
         sparkline_prices = [float(p) for p in prices_arr]
         sparkline_dates = [d.strftime('%Y-%m-%d') for d in prices_aligned.index]
+        benchmark_sparkline_prices = [float(p) for p in benchmark_arr]
 
         bench_key = f'benchmark_return_{benchmark_name.lower()}'
         sparkline_key_prices = f'sparkline_prices_{benchmark_name.lower()}'
         sparkline_key_dates = f'sparkline_dates_{benchmark_name.lower()}'
+        bench_sparkline_key = f'benchmark_sparkline_prices_{benchmark_name.lower()}'
 
         result = {
             'return': round(total_return, 2),
@@ -191,9 +193,11 @@ def calculate_metrics(
         if benchmark_name == 'SPY':
             result['sparkline_prices'] = sparkline_prices
             result['sparkline_dates'] = sparkline_dates
+            result['benchmark_sparkline_prices'] = benchmark_sparkline_prices
         else:
             result[sparkline_key_prices] = sparkline_prices
             result[sparkline_key_dates] = sparkline_dates
+            result[bench_sparkline_key] = benchmark_sparkline_prices
 
         return result
     except Exception as e:
