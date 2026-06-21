@@ -269,6 +269,71 @@ def calculate_returns(snap: Dict) -> Dict:
     return returns
 
 
+def calculate_price_return_1y(price_history: Dict[str, float]) -> Optional[float]:
+    """Calculate 1Y return from a price history dict {date: price, ...}. Returns None if no data."""
+    from datetime import timedelta
+    today = date.today()
+    today_str = today.isoformat()
+    current_price = price_history.get(today_str)
+    if current_price is None:
+        # Use most recent price
+        if not price_history:
+            return None
+        current_price = price_history[max(price_history.keys())]
+
+    # Find price from 1Y ago
+    date_1y_ago = (today - timedelta(days=365)).isoformat()
+    price_1y_ago = price_history.get(date_1y_ago)
+    if price_1y_ago is None:
+        # Find closest date
+        closest_date = None
+        for hist_date in sorted(price_history.keys()):
+            if hist_date <= date_1y_ago:
+                closest_date = hist_date
+        if closest_date:
+            price_1y_ago = price_history[closest_date]
+        else:
+            return None
+
+    if price_1y_ago == 0:
+        return None
+    return ((current_price - price_1y_ago) / price_1y_ago * 100)
+
+
+def calculate_position_return_1y(holdings_data: List[Dict], snapshot: Dict) -> Dict[str, Optional[float]]:
+    """Calculate 1Y return for each position. Returns {symbol: return_pct or None}."""
+    from datetime import timedelta
+    today = date.today()
+    today_str = today.isoformat()
+    history = snapshot.get('value_history', {})
+
+    returns_by_symbol = {}
+    for holding in holdings_data:
+        symbol = holding['symbol']
+        contract_date = holding.get('contract_date')
+
+        # Check if position existed 1Y ago
+        date_1y_ago = (today - timedelta(days=365)).isoformat()
+        position_exists_1y_ago = False
+
+        if contract_date and contract_date > date_1y_ago:
+            # Position didn't exist 1Y ago; skip 1Y calculation
+            returns_by_symbol[symbol] = None
+            continue
+
+        # Use the average cost as baseline (conservative approach)
+        avg_cost = holding.get('avg_cost')
+        current_price = holding.get('current_base')
+        if avg_cost and current_price:
+            # Approximate: use current price vs avg cost (not a true 1Y return, but reasonable proxy)
+            # A proper 1Y would need historical prices
+            returns_by_symbol[symbol] = ((current_price - avg_cost) / avg_cost * 100)
+        else:
+            returns_by_symbol[symbol] = None
+
+    return returns_by_symbol
+
+
 # ---------------------------------------------------------------------------
 # Portfolio allocation & benchmark
 # ---------------------------------------------------------------------------
@@ -537,7 +602,7 @@ def format_telegram(
     lines.append(" | ".join(returns_parts))
     lines.append("")
 
-    # Deduplicate movers by symbol (aggregate multiple lots, show all-time returns for now)
+    # Deduplicate movers by symbol (aggregate multiple lots, show all-time P&L)
     symbol_returns = {}
     for h in holdings_data:
         if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS:
@@ -551,20 +616,21 @@ def format_telegram(
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
-        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers))
+        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers) + " (All-Time)")
 
     # Add benchmark comparison between gainers and losers
     if benchmark_data:
         benchmark_parts = []
         for symbol in ['SPY', 'QQQ']:
             if symbol in benchmark_data:
-                # For now, just show the symbol as a placeholder; YTD would require historical data
-                benchmark_parts.append(f"{symbol} —")
+                return_1y = benchmark_data[symbol].get('return_1y')
+                ret_str = f"{return_1y:+.1f}%" if return_1y is not None else "—"
+                benchmark_parts.append(f"{symbol} {ret_str} (1Y)")
         if benchmark_parts:
             lines.append("📊 " + " | ".join(benchmark_parts))
 
     if losers:
-        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers))
+        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers) + " (All-Time)")
     if gainers or losers:
         lines.append("")
 
@@ -712,12 +778,15 @@ def _run(args) -> str:
             result = fetch_price(benchmark_symbol, yf, stooq)
             if result.get('price'):
                 current_price = result['price']
-                benchmark_data[benchmark_symbol] = {'price': current_price}
 
                 # Update history
                 if benchmark_symbol not in benchmark_history:
                     benchmark_history[benchmark_symbol] = {}
                 benchmark_history[benchmark_symbol][today_str] = current_price
+
+                # Calculate 1Y return from history
+                return_1y = calculate_price_return_1y(benchmark_history[benchmark_symbol])
+                benchmark_data[benchmark_symbol] = {'price': current_price, 'return_1y': return_1y}
         except Exception as e:
             logger.warning(f"Could not fetch {benchmark_symbol}: {e}")
 
