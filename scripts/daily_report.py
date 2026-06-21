@@ -525,19 +525,19 @@ def format_telegram(
         f"{ccy(total_value)}  |  All-time P&L {gain_pct:+.1f}%",
     ]
 
-    # Add returns line: 1Y | 3M | YTD
+    # Add returns line on single line: 1Y | 3M | YTD | Drawdown
     returns_parts = []
     if return_1y is not None:
         returns_parts.append(f"1Y {return_1y:+.1f}%")
     if return_3m is not None:
         returns_parts.append(f"3M {return_3m:+.1f}%")
     returns_parts.append(f"YTD {ytd_pct:+.1f}%")
+    returns_parts.append(f"DD {drawdown_pct:.1f}%")
 
     lines.append(" | ".join(returns_parts))
-    lines.append(f"Drawdown {drawdown_pct:.1f}%")
     lines.append("")
 
-    # Deduplicate movers by symbol (aggregate multiple lots)
+    # Deduplicate movers by symbol (aggregate multiple lots, show all-time returns for now)
     symbol_returns = {}
     for h in holdings_data:
         if h.get('pl_pct') is not None and h['symbol'] not in EXCLUDED_SYMBOLS:
@@ -551,9 +551,9 @@ def format_telegram(
     gainers = sorted([m for m in movers if m[1] > 0], key=lambda x: x[1], reverse=True)[:3]
     losers = sorted([m for m in movers if m[1] < 0], key=lambda x: x[1])[:3]
     if gainers:
-        lines.append("▲ " + "  ".join(f"{s} {p:+.2f}%" for s, p in gainers))
+        lines.append("▲ " + "  ".join(f"{s} {p:+.1f}%" for s, p in gainers))
     if losers:
-        lines.append("▼ " + "  ".join(f"{s} {p:+.2f}%" for s, p in losers))
+        lines.append("▼ " + "  ".join(f"{s} {p:+.1f}%" for s, p in losers))
     if gainers or losers:
         lines.append("")
 

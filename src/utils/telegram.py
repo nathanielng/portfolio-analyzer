@@ -29,11 +29,11 @@ class TelegramSender:
         self.chat_id = str(chat_id)
         self.max_retries = max_retries
 
-    def send(self, text: str, parse_mode: str = 'Markdown') -> bool:
+    def send(self, text: str, parse_mode: str = 'Markdown', disable_web_page_preview: bool = True) -> bool:
         """Send text, chunking at _MAX_CHUNK chars. Returns True if all chunks sent."""
         ok = True
         for chunk in _chunk(text, _MAX_CHUNK):
-            ok = self._send_one(chunk, parse_mode) and ok
+            ok = self._send_one(chunk, parse_mode, disable_web_page_preview) and ok
         return ok
 
     def send_error(self, script_name: str, error: str) -> bool:
@@ -45,9 +45,14 @@ class TelegramSender:
             f"ERROR in {script_name}: {snippet}", 'MarkdownV2'
         )
 
-    def _send_one(self, text: str, parse_mode: str) -> bool:
+    def _send_one(self, text: str, parse_mode: str, disable_web_page_preview: bool = True) -> bool:
         url = _API_BASE.format(token=self.token, method='sendMessage')
-        payload = {'chat_id': self.chat_id, 'text': text, 'parse_mode': parse_mode}
+        payload = {
+            'chat_id': self.chat_id,
+            'text': text,
+            'parse_mode': parse_mode,
+            'disable_web_page_preview': disable_web_page_preview,
+        }
         for attempt in range(self.max_retries):
             try:
                 resp = requests.post(url, json=payload, timeout=15)
