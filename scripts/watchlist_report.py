@@ -315,6 +315,36 @@ def main():
                 underperform_count += 1
         symbol_data['underperforming'] = underperform_count >= 2
 
+    # Add group assignments
+    symbol_groups = {
+        # Chip Design
+        'NVDA': 'Chip Design',
+        'AMD': 'Chip Design',
+        'INTC': 'Chip Design',
+        'ARM': 'Chip Design',
+        'SNPS': 'Chip Design',
+        # Manufacturing & Memory
+        'TSM': 'Manufacturing & Memory',
+        'MU': 'Manufacturing & Memory',
+        '000660.KS': 'Manufacturing & Memory',
+        'ASML': 'Manufacturing & Memory',
+        # Cloud & Enterprise
+        'MSFT': 'Cloud & Enterprise',
+        'AMZN': 'Cloud & Enterprise',
+        'GOOGL': 'Cloud & Enterprise',
+        'META': 'Cloud & Enterprise',
+        'ORCL': 'Cloud & Enterprise',
+        'AVGO': 'Cloud & Enterprise',
+        # Consumer Hardware
+        'AAPL': 'Consumer Hardware',
+        # Benchmarks
+        'SMH': 'Benchmarks',
+        'QQQM': 'Benchmarks',
+    }
+
+    for symbol_data in watchlist_metrics:
+        symbol_data['group'] = symbol_groups.get(symbol_data['symbol'], 'Other')
+
     # Calculate correlation matrix (1Y returns)
     logger.info("Calculating correlation matrix...")
     correlation_matrix = calculate_correlation_matrix(all_data, watchlist_metrics)
